@@ -47,20 +47,49 @@ CHAMPS_SANS_REDONDANCE = ("nom_fournisseur", "date", "numero_facture")
 def _confiance_valeur(valeur: str, mots) -> float | None:
     """Confiance la plus basse parmi les fragments OCR qui composent la valeur.
 
-    Le rapprochement est textuel et volontairement tolerant : on retient tout
-    fragment contenu dans la valeur, ou qui la contient. En l'absence de
-    correspondance, on ne conclut rien plutot que de supposer.
+    Deux formes de correspondance seulement, pour eviter les rapprochements
+    fortuits (releves a l'audit : un fragment « 2026 » a 0,40 sans rapport
+    faisait ecarter une date correcte) :
+
+    - le fragment contient la valeur entiere : correspondance sure ;
+    - le fragment est un morceau de la valeur, a condition d'en couvrir une
+      part substantielle (au moins 5 caracteres ET 60 % de la longueur de la
+      cible). Un token court partage par hasard ne suffit plus.
+
+    En l'absence de correspondance, on ne conclut rien plutot que de supposer.
     """
     cible = "".join(valeur.split()).lower()
     if not cible:
         return None
-    scores = [
-        m.confiance for m in mots
-        if (nettoye := "".join(m.texte.split()).lower())
-        and len(nettoye) >= 3
-        and (nettoye in cible or cible in nettoye)
-    ]
+    longueur_minimale = max(5, -(-len(cible) * 6 // 10))  # plafond entier de 60 %
+    scores = []
+    for m in mots:
+        nettoye = "".join(m.texte.split()).lower()
+        if not nettoye:
+            continue
+        if cible in nettoye:
+            scores.append(m.confiance)
+        elif nettoye in cible and len(nettoye) >= longueur_minimale:
+            scores.append(m.confiance)
     return min(scores) if scores else None
+
+
+def _normalise_nom_champ(nom: str) -> str:
+    """Ramene « Numéro de facture » a `numero_facture`.
+
+    Le modele recopie parfois le libelle humain au lieu du nom technique dans
+    `champs_illisibles`. Sans normalisation, le champ passerait silencieusement
+    d'illisible a absent, et l'alerte se perdrait.
+    """
+    import unicodedata
+
+    plat = unicodedata.normalize("NFKD", nom).encode("ascii", "ignore").decode()
+    plat = plat.lower().strip().replace("-", " ").replace("'", " ")
+    plat = "_".join(plat.split())
+    return {"numero": "numero_facture", "numero_de_facture": "numero_facture",
+            "fournisseur": "nom_fournisseur", "nom_du_fournisseur": "nom_fournisseur",
+            "lignes": "lignes_produits", "lignes_de_produits": "lignes_produits",
+            "total_ht": "total_HT", "total_ttc": "total_TTC"}.get(plat, plat)
 
 
 def _etats_champs(lue: FactureLue) -> dict[str, EtatChamp]:
@@ -70,7 +99,7 @@ def _etats_champs(lue: FactureLue) -> dict[str, EtatChamp]:
     non lisible est `illisible`. Un champ vide non signale est `absent`, donc
     considere comme legitimement inexistant sur ce document.
     """
-    signales = {c.strip() for c in lue.champs_illisibles}
+    signales = {_normalise_nom_champ(c) for c in lue.champs_illisibles}
     etats: dict[str, EtatChamp] = {}
     for champ in CHAMPS_SIMPLES:
         valeur = getattr(lue, champ)

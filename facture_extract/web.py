@@ -51,18 +51,43 @@ def api_exemple(nom: str):
     return FileResponse(chemin, media_type="application/pdf", filename=chemin.name)
 
 
+# Au-dela, le passage en base64 (+33 %) vers l'API n'a de toute facon aucune
+# chance d'aboutir : autant refuser tout de suite avec un message clair.
+TAILLE_MAX = 20 * 1024 * 1024
+
+
 @app.post("/api/extraire")
-async def api_extraire(fichier: UploadFile = File(...)) -> JSONResponse:
+def api_extraire(fichier: UploadFile = File(...)) -> JSONResponse:
+    """Handler volontairement synchrone : FastAPI l'execute dans un thread,
+    et la boucle d'evenements reste disponible pendant les quelques secondes
+    d'OCR et d'extraction. En `async def`, tout le serveur serait fige, y
+    compris la page elle-meme."""
     if not (fichier.filename or "").lower().endswith(".pdf"):
         return JSONResponse({"erreur": "Seuls les fichiers PDF sont acceptes."}, status_code=400)
 
-    with tempfile.TemporaryDirectory() as tmp:
-        chemin = Path(tmp) / Path(fichier.filename).name
-        chemin.write_bytes(await fichier.read())
-        try:
+    donnees = fichier.file.read(TAILLE_MAX + 1)
+    if len(donnees) > TAILLE_MAX:
+        return JSONResponse(
+            {"erreur": f"Fichier trop volumineux (plus de {TAILLE_MAX // (1024 * 1024)} Mo)."},
+            status_code=413)
+
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            # Nom neutre : un nom de fichier uploade peut contenir des
+            # caracteres interdits par le systeme de fichiers.
+            chemin = Path(tmp) / "document.pdf"
+            chemin.write_bytes(donnees)
             facture = traiter(chemin)
-        except Exception as e:
-            return JSONResponse({"erreur": f"{type(e).__name__} : {e}"}, status_code=500)
+    except RuntimeError as e:
+        # Nos propres erreurs (cle absente...) sont pedagogiques : on les montre.
+        return JSONResponse({"erreur": str(e)}, status_code=500)
+    except Exception as e:
+        # Le detail (chemins locaux, corps de reponse API) reste cote serveur.
+        print(f"[extraire] {type(e).__name__}: {e}")
+        return JSONResponse(
+            {"erreur": f"Le traitement a echoue ({type(e).__name__}). "
+                       f"Verifier que le fichier est un PDF valide et reessayer."},
+            status_code=500)
     return JSONResponse(facture.model_dump(mode="json"))
 
 
@@ -334,7 +359,7 @@ async function envoyer(f){
   res.innerHTML = ""; etat.className = "etat charge"; etat.textContent = "Lecture de " + f.name;
   const fd = new FormData(); fd.append("fichier", f);
   try{
-    const r = await fetch("/api/extraire",{method:"POST",body:fd});
+    const r = await fetch("/api/extraire",{method:"POST",body:fd,signal:AbortSignal.timeout(180000)});
     const d = await r.json();
     etat.className = "etat"; etat.textContent = "";
     if(!r.ok){ res.innerHTML = '<div class="erreur">' + esc(d.erreur) + '</div>'; return; }

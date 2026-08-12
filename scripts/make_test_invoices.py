@@ -5,11 +5,16 @@ quatre JSON d'exemple de sortie l'etaient. Ce script reconstruit un jeu de test
 reproductible a partir de ces sorties attendues, pour pouvoir valider le
 pipeline en attendant les originaux.
 """
-import json, subprocess, sys
+import argparse
+import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
-CHROME = Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe")
-SRC = Path(__file__).resolve().parents[4] / "lab-job-hunt/projets-meta/cv-linkedin-portfolio/outreach/juwa/test-technique/factures_json"
+# Surchargable par la variable d'environnement CHROME pour un poste ou Chrome
+# est installe ailleurs (ou pour utiliser Edge, qui accepte les memes options).
+CHROME = Path(os.environ.get("CHROME", r"C:\Program Files\Google\Chrome\Application\chrome.exe"))
 OUT = Path(__file__).resolve().parents[1] / "tests/fixtures"
 
 CSS = """
@@ -52,8 +57,15 @@ def html(d):
 Indemnite forfaitaire pour frais de recouvrement : 40 EUR.</div></body></html>"""
 
 def main():
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--src", type=Path, required=True,
+                   help="Dossier contenant les JSON d'exemples de sortie fournis avec l'enonce.")
+    args = p.parse_args()
+    if not args.src.is_dir():
+        sys.exit(f"Dossier introuvable : {args.src}")
+
     OUT.mkdir(parents=True, exist_ok=True)
-    for jf in sorted(SRC.glob("*.json")):
+    for jf in sorted(args.src.glob("*.json")):
         d = json.loads(jf.read_text(encoding="utf-8"))
         h = OUT / (jf.stem + ".html"); h.write_text(html(d), encoding="utf-8")
         pdf = OUT / (jf.stem + ".pdf")

@@ -46,6 +46,8 @@ def comparer(attendu: dict, obtenu: dict) -> list[str]:
         for i, (x, y) in enumerate(zip(lignes_a, lignes_o), start=1):
             for champ in ("quantite", "prix_unitaire"):
                 a, o = x.get(champ), y.get(champ)
+                if a is None and o is None:  # deux absences concordantes ne sont pas un ecart
+                    continue
                 if a is None or o is None or abs(a - o) > TOLERANCE:
                     ecarts.append(f"ligne {i}, {champ} : attendu {a!r}, obtenu {o!r}")
     return ecarts
@@ -74,10 +76,14 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     total = 0
+    manquants = 0
     for reference in references:
         resultat = args.resultats / reference.name
         if not resultat.exists():
+            # Un resultat manquant est un echec, pas une ligne ignoree : sinon
+            # la comparaison pourrait « reussir » sans avoir rien compare.
             print(f"{reference.stem:<34} SANS RESULTAT")
+            manquants += 1
             continue
         ecarts = comparer(
             json.loads(reference.read_text(encoding="utf-8")),
@@ -88,8 +94,9 @@ def main(argv: list[str] | None = None) -> int:
         for e in ecarts:
             print(f"    - {e}")
 
-    print(f"\nTotal : {total} ecart(s) sur les champs de reference.")
-    return 0 if total == 0 else 1
+    print(f"\nTotal : {total} ecart(s), {manquants} reference(s) sans resultat, "
+          f"sur {len(references)} reference(s).")
+    return 0 if total == 0 and manquants == 0 else 1
 
 
 if __name__ == "__main__":

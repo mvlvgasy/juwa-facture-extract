@@ -103,24 +103,32 @@ def controler(
                              f"et le total HT imprime ({total_ht:.2f}). A verifier avant paiement.")))
 
     # --- 2. Taux de TVA deduit, jamais suppose -----------------------------
+    # La comparaison se fait en MONTANT, pas en taux : sur une petite facture,
+    # la TVA legalement arrondie au centime deforme le taux apparent (HT 1,13,
+    # TTC 1,36 : TVA reglementaire 0,23, taux apparent 20,35 %). Comparer les
+    # taux leverait un faux positif sur une facture parfaitement conforme ;
+    # comparer les montants a un centime pres est insensible a cet arrondi.
     if total_ht is None or total_ttc is None or total_ht == 0:
         ajoute(Controle(
             nom="taux_tva", resultat=ResultatControle.NON_APPLICABLE,
             detail="Total HT ou TTC manquant, taux non deductible."))
     else:
         taux = _arrondi((total_ttc / total_ht - 1) * 100)
-        proche = min(TAUX_TVA_CONNUS, key=lambda t: abs(t - taux))
-        if abs(proche - taux) <= 0.05:
+        compatibles = [t for t in TAUX_TVA_CONNUS
+                       if abs(total_ttc - _arrondi(total_ht * (1 + t / 100))) <= CENTIME]
+        if compatibles:
+            t = min(compatibles, key=lambda t: abs(t - taux))
             ajoute(Controle(
                 nom="taux_tva", resultat=ResultatControle.OK,
-                detail=f"Taux deduit {taux:.2f} %, correspond au {TAUX_TVA_CONNUS[proche]}.",
-                trouve=taux, attendu=proche))
+                detail=f"TTC compatible avec le {TAUX_TVA_CONNUS[t]} ({t} %), taux apparent {taux:.2f} %.",
+                trouve=taux, attendu=t))
         else:
+            proche = min(TAUX_TVA_CONNUS, key=lambda t: abs(t - taux))
             ajoute(
                 Controle(
                     nom="taux_tva", resultat=ResultatControle.ECHEC,
-                    detail=(f"Taux deduit {taux:.2f} %, ne correspond a aucun taux francais connu. "
-                            f"Le plus proche est {proche} %."),
+                    detail=(f"Taux deduit {taux:.2f} %, incompatible avec tous les taux francais connus "
+                            f"(le plus proche est {proche} %)."),
                     trouve=taux, attendu=proche, ecart=_arrondi(taux - proche)),
                 Avertissement(
                     code="TAUX_TVA_INCONNU", champ="total_TTC", gravite=Gravite.ALERTE,
@@ -131,6 +139,15 @@ def controler(
     if total_ht is None or total_ttc is None:
         ajoute(Controle(nom="ttc_superieur_ht", resultat=ResultatControle.NON_APPLICABLE,
                         detail="Un des deux totaux est manquant."))
+    elif total_ht < 0 and total_ttc < 0:
+        # Un avoir porte legitimement deux totaux negatifs : ce n'est pas une
+        # incoherence, c'est une nature de document a signaler.
+        ajoute(
+            Controle(nom="ttc_superieur_ht", resultat=ResultatControle.NON_APPLICABLE,
+                     detail="Totaux negatifs : le document est probablement un avoir, pas une facture."),
+            Avertissement(code="DOCUMENT_AVOIR", champ=None, gravite=Gravite.INFO,
+                          message=("Les deux totaux sont negatifs : ce document ressemble a un avoir. "
+                                   "Le traiter comme tel dans la comptabilite.")))
     elif total_ttc + CENTIME >= total_ht:
         ajoute(Controle(nom="ttc_superieur_ht", resultat=ResultatControle.OK,
                         detail="Le total TTC est bien superieur ou egal au total HT."))

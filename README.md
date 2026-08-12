@@ -130,8 +130,9 @@ test a donc été **reconstruit à partir de ces sorties**, pour pouvoir valider
 pipeline en attendant les originaux.
 
 ```bash
-python scripts/make_test_invoices.py                      # regénère les PDF
+python scripts/make_test_invoices.py --src <dossier des JSON de l'énoncé>
 python scripts/degrade_scan.py <entrée.pdf> <sortie.pdf>  # fabrique un scan dégradé
+python scripts/make_edge_cases.py                         # les six cas limites
 ```
 
 ### Vérification par rapport aux sorties attendues

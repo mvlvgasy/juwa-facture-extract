@@ -13,11 +13,12 @@ d'image : c'est reproductible, et surtout on sait exactement ce que chacun teste
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
 
-CHROME = Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe")
+CHROME = Path(os.environ.get("CHROME", r"C:\Program Files\Google\Chrome\Application\chrome.exe"))
 OUT = Path(__file__).resolve().parents[1] / "tests" / "fixtures"
 
 CSS = """

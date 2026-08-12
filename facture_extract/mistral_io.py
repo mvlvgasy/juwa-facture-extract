@@ -31,6 +31,15 @@ from .schema import FactureLue
 MODELE_OCR = "mistral-ocr-latest"
 MODELE_EXTRACTION = "mistral-small-latest"
 
+# Deux minutes par appel : au-dela, mieux vaut un echec franc qu'une attente
+# infinie, surtout en demonstration. Les erreurs transitoires (reseau, 5xx)
+# sont retentees par le SDK avec un backoff court.
+TIMEOUT_MS = 120_000
+
+def _retries():
+    from mistralai.client.utils.retries import BackoffStrategy, RetryConfig
+    return RetryConfig("backoff", BackoffStrategy(500, 8_000, 1.5, 30_000), True)
+
 _CONSIGNE = """\
 Tu recois le texte d'une facture fournisseur, obtenu par OCR, suivi de ses \
 tableaux. Ta seule tache est de reporter ce qui est ecrit.
@@ -87,20 +96,22 @@ def cle_api() -> str:
 
     La cle n'est jamais ecrite dans le code ni versionnee : cf. .env.example.
     """
-    cle = os.environ.get("MISTRAL_API_KEY")
+    cle = (os.environ.get("MISTRAL_API_KEY") or "").strip()
     if cle:
-        return cle.strip()
+        return cle
 
     for chemin in (Path.cwd() / ".env", Path(__file__).resolve().parents[1] / ".env"):
         if chemin.exists():
             for ligne in chemin.read_text(encoding="utf-8", errors="ignore").splitlines():
                 ligne = ligne.strip()
-                if ligne.startswith("MISTRAL_API_KEY=") and not ligne.startswith("#"):
-                    return ligne.split("=", 1)[1].strip().strip('"').strip("'")
+                if ligne.startswith("MISTRAL_API_KEY="):
+                    valeur = ligne.split("=", 1)[1].strip().strip('"').strip("'")
+                    if valeur:  # un `cp .env.example .env` non rempli laisse la valeur vide :
+                        return valeur  # on continue vers le message pedagogique, pas vers un 401
 
     raise RuntimeError(
-        "MISTRAL_API_KEY introuvable. Definis la variable d'environnement, ou cree "
-        "un fichier .env a partir de .env.example. Voir le README."
+        "MISTRAL_API_KEY introuvable ou vide. Definis la variable d'environnement, ou "
+        "renseigne la cle dans le fichier .env (cf. .env.example et README)."
     )
 
 
@@ -132,10 +143,12 @@ def ocr(pdf: Path, cli: Mistral | None = None) -> ResultatOcr:
         # une valeur precise que l'OCR a devinee. Une confiance moyenne de page
         # reste excellente meme quand un champ isole est invente.
         confidence_scores_granularity="word",
+        timeout_ms=TIMEOUT_MS,
+        retries=_retries(),
     )
 
     textes, tableaux, moyennes, minima, mots = [], [], [], [], []
-    for page in reponse.pages:
+    for page in (reponse.pages or []):
         if page.markdown:
             textes.append(page.markdown)
         for t in (page.tables or []):
@@ -181,6 +194,8 @@ def extraire(texte: str, cli: Mistral | None = None) -> FactureLue:
             {"role": "system", "content": _CONSIGNE},
             {"role": "user", "content": texte},
         ],
+        timeout_ms=TIMEOUT_MS,
+        retries=_retries(),
     )
     resultat = reponse.choices[0].message.parsed
     if resultat is None:

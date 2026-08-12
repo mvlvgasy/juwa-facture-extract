@@ -47,7 +47,8 @@ def resume(f: Facture) -> str:
     lignes.append(f"    lignes           : {len(f.lignes_produits)}")
     for l in f.lignes_produits:
         libelle = (l.designation or "?")[:52]
-        lignes.append(f"      - {libelle:<52} {str(l.quantite or '?'):>5} x "
+        qte = "?" if l.quantite is None else l.quantite  # 0 est une valeur lue, pas une absence
+        lignes.append(f"      - {libelle:<52} {str(qte):>5} x "
                       f"{_montant(l.prix_unitaire):>10} = {_montant(l.total_ligne):>11}")
     lignes.append(f"    total HT         : {_montant(f.total_HT)}")
     lignes.append(f"    total TTC        : {_montant(f.total_TTC)}")
@@ -76,9 +77,29 @@ def main(argv: list[str] | None = None) -> int:
                    help="Ecrire un fichier .json par facture dans ce dossier.")
     args = p.parse_args(argv)
 
-    fichiers = [f for f in args.pdf if f.suffix.lower() == ".pdf" and f.exists()]
-    manquants = [f for f in args.pdf if f not in fichiers]
-    for f in manquants:
+    # Sortie en UTF-8 quoi qu'il arrive. Sous Windows, un stdout redirige passe
+    # en cp1252, et le premier caractere hors page de code (une ligature « fi »
+    # extraite d'un PDF suffit) ferait planter le programme en plein lot.
+    for flux in (sys.stdout, sys.stderr):
+        if hasattr(flux, "reconfigure"):
+            flux.reconfigure(encoding="utf-8", errors="replace")
+
+    # PowerShell et cmd ne developpent pas les jokers : `tests/fixtures/*.pdf`
+    # arrive tel quel. On le developpe nous-memes pour que la commande du
+    # README se comporte pareil quel que soit le shell.
+    candidats: list[Path] = []
+    for brut in args.pdf:
+        texte = str(brut)
+        if "*" in texte or "?" in texte:
+            trouves = sorted(Path().glob(texte))
+            if not trouves:
+                print(f"aucun fichier ne correspond a : {texte}", file=sys.stderr)
+            candidats.extend(trouves)
+        else:
+            candidats.append(brut)
+
+    fichiers = [f for f in candidats if f.suffix.lower() == ".pdf" and f.exists()]
+    for f in [f for f in candidats if f not in fichiers]:
         print(f"ignore (introuvable ou non PDF) : {f}", file=sys.stderr)
     if not fichiers:
         print("Aucun PDF a traiter.", file=sys.stderr)
@@ -88,6 +109,8 @@ def main(argv: list[str] | None = None) -> int:
         args.out.mkdir(parents=True, exist_ok=True)
 
     code_sortie = 0
+    contenus_json: list[str] = []
+    noms_ecrits: set[str] = set()
     for chemin in fichiers:
         try:
             facture = traiter(chemin)
@@ -97,9 +120,27 @@ def main(argv: list[str] | None = None) -> int:
             continue
 
         contenu = facture.model_dump_json(indent=2, exclude_none=False)
-        print(contenu if args.json else resume(facture))
+        if args.json:
+            contenus_json.append(contenu)
+        else:
+            print(resume(facture))
         if args.out:
-            (args.out / f"{chemin.stem}.json").write_text(contenu, encoding="utf-8")
+            nom = chemin.stem
+            if nom in noms_ecrits:  # deux dossiers differents, meme nom de fichier
+                i = 2
+                while f"{nom}-{i}" in noms_ecrits:
+                    i += 1
+                nom = f"{nom}-{i}"
+            noms_ecrits.add(nom)
+            (args.out / f"{nom}.json").write_text(contenu, encoding="utf-8")
+
+    if args.json:
+        # Un document seul s'imprime tel quel ; un lot s'enveloppe dans un
+        # tableau, pour que la sortie reste un JSON parsable dans les deux cas.
+        if len(contenus_json) == 1:
+            print(contenus_json[0])
+        elif contenus_json:
+            print("[" + ",\n".join(contenus_json) + "]")
 
     return code_sortie
 
