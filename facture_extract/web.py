@@ -6,18 +6,17 @@ taux de TVA improbable doivent sauter aux yeux avant les valeurs elles-memes.
 Une extraction presentee sans son niveau de certitude invite a faire confiance
 a des chiffres qui ne le meritent pas toujours.
 
-Parti pris graphique : un instrument de mesure, pas un tableau de bord. Le
-lecteur est un comptable ou un responsable d'atelier dans une PME industrielle ;
-il lit des bons de commande et des releves, pas des applications. D'ou les
-reglures d'un registre, les chiffres en chasse fixe alignes a la virgule, le
-verdict tamponne en tete, et une palette de papier plutot que de logiciel.
-La typographie est la famille IBM Plex, dessinee pour la documentation technique.
+Disposition : bandeau de verdict en tete, puis deux colonnes. A gauche ce que
+le document dit (champs, lignes), a droite ce que le programme en pense
+(verifications, avertissements). Le doute reste donc epingle a l'ecran pendant
+qu'on lit les valeurs, au lieu d'etre relegue en bas de page. La somme des
+lignes est recalculee juste sous le tableau, a cote du total imprime : c'est
+ce rapprochement qui rend un ecart visible sans avoir a le chercher.
 
 Choix technique : une seule page, servie par le meme processus que l'API,
 sans etape de build ni dependance front. Le projet s'installe avec un
 `pip install` et se lance avec une commande, ce qui tient la contrainte de
-mise en route en moins de cinq minutes et rend la demonstration en direct
-previsible.
+mise en route en moins de cinq minutes et rend la demonstration previsible.
 """
 
 from __future__ import annotations
@@ -34,6 +33,10 @@ app = FastAPI(title="Extraction de factures", docs_url="/api")
 
 DOSSIER_EXEMPLES = Path(__file__).resolve().parents[1] / "tests" / "fixtures"
 
+# Au-dela, le passage en base64 (+33 %) vers l'API n'a de toute facon aucune
+# chance d'aboutir : autant refuser tout de suite avec un message clair.
+TAILLE_MAX = 20 * 1024 * 1024
+
 
 @app.get("/api/exemples")
 def api_exemples() -> JSONResponse:
@@ -49,11 +52,6 @@ def api_exemple(nom: str):
     if not chemin.is_file() or DOSSIER_EXEMPLES.resolve() not in chemin.parents:
         return JSONResponse({"erreur": "Exemple introuvable."}, status_code=404)
     return FileResponse(chemin, media_type="application/pdf", filename=chemin.name)
-
-
-# Au-dela, le passage en base64 (+33 %) vers l'API n'a de toute facon aucune
-# chance d'aboutir : autant refuser tout de suite avec un message clair.
-TAILLE_MAX = 20 * 1024 * 1024
 
 
 @app.post("/api/extraire")
@@ -99,226 +97,184 @@ def page() -> str:
 PAGE = r"""<!doctype html>
 <html lang="fr"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lecture de facture</title>
+<title>Controle factures</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700;12..96,800&family=Red+Hat+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 /* =====================================================================
-   Design system « klein-lin » du lab-design : fond lin chaud, outremer
-   franc, ardoise bleutee, mono pour les montants. Preset genere depuis ses
-   tokens et incruste tel quel, pour que la page reste autonome : aucune
-   ressource distante, donc aucun risque de rendu degrade en demonstration.
-   Les composants ci-dessous ne parlent QU'a la couche haute (les roles),
-   jamais a la couche matiere. C'est la regle du systeme, et c'est ce qui
-   permet de rethemer sans toucher au balisage.
+   Jetons. Fond lin chaud et outremer, chiffres en chasse fixe. Tout est
+   ici, en un seul bloc : changer d'ambiance ne demande pas de toucher au
+   balisage.
    ===================================================================== */
-  /* klein-lin — assurance santé d'équipe B2B — fond lin chaud, outremer franc, ardoise bleutée, Candara + Calibri + mono montants, mode bleu nuit apaisé */
-  /* GÉNÉRÉ par tools/build-tokens.mjs depuis design-systems/klein-lin/tokens.json — ne pas éditer à la main. */
-  :root {
-    --bg: #f4efe6;
-    --fg: #1a2a3a;
-    --accent: #1a4fc8;
-    --muted: #5c6478;
-    --line: #dbd3c4;
-    --font-display: Candara, Optima, 'Gill Sans MT', 'Gill Sans', system-ui, sans-serif;
-    --font-body: Calibri, Candara, system-ui, sans-serif;
-    --font-mono: ui-monospace, 'Cascadia Mono', Consolas, 'Courier New', monospace;
-    --radius: 10px;
-    --border: 1px solid #dbd3c4;
-    --shadow: 0 4px 18px -4px rgba(26, 79, 200, 0.10);
-    --fg-soft: #4a5560;
-    --fg-faint: #989c9e;
-    --fg-inverse: #f4efe6;
-    --surface-card: #fcfaf8;
-    --surface-sunken: #e9e4dc;
-    --line: #dbd3c4;
-    --line-strong: #c4bfb3;
-    --accent-text: #1a4fc8;
-    --accent-ink: #fdfdfb;
-    --accent-veil: #dadce2;
-    --success: #196b40;
-    --success-veil: #dadfd2;
-    --warning: #74591b;
-    --warning-veil: #e5ddce;
-    --error: #7c2a1d;
-    --error-veil: #e6d7ce;
-    --focus-ring: #1a2a3a;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #141e2e;
-      --fg: #e8eef8;
-      --accent: #6b90ee;
-      --muted: #8899b4;
-      --line: #263449;
-      --border: 1px solid #263449;
-      --shadow: 0 4px 18px -4px rgba(0, 10, 30, 0.50);
-      --fg-soft: #b9c0cc;
-      --fg-faint: #6d7583;
-      --fg-inverse: #141e2e;
-      --surface-card: #212a39;
-      --surface-sunken: #0c121c;
-      --line: #263449;
-      --line-strong: #3d4a5e;
-      --accent-text: #6b90ee;
-      --accent-ink: #2a2b2d;
-      --accent-veil: #1e2c45;
-      --success: #6adc9f;
-      --success-veil: #1e353c;
-      --warning: #dcba6a;
-      --warning-veil: #2c3135;
-      --error: #dc796a;
-      --error-veil: #2c2935;
-      --focus-ring: #e8eef8;
-    }
-  }
-/* ---------------------------------------------------------------------
-   Composants. Parti pris : un formulaire d'atelier, pas une application.
-   Le lecteur est comptable ou responsable de production dans une PME
-   industrielle : il lit des bons et des releves, pas des logiciels. D'ou
-   la grille stricte, les filets pleins, les chiffres en chasse fixe
-   alignes a la virgule, et le verdict pose en tete comme un tampon.
-   --------------------------------------------------------------------- */
+:root{
+  --papier:#eee7d7; --panneau:#f6f1e4; --surface:#fbf8f1;
+  --filet:#e0d7c2; --filet-doux:#efe8d6; --pointille:#c9bd9f;
+  --encre:#2a251c; --doux:#5c5443; --mut:#7a715f;
+  --bleu:#2f45c8; --bleu-fonce:#1f2f8e; --bleu-voile:#e8ebf9;
+  --ambre:#a3641a; --ambre-bande:#f3e3c3; --ambre-titre:#7c4a0f;
+  --ambre-texte:#8a6528; --ambre-voile:#f9efe0; --ambre-filet:#e6c98f;
+  --ambre-tirets:#c9963f; --jauge:#ece1c8;
+  --rouge:#b0402c; --rouge-voile:#f7e4de; --rouge-filet:#d09a8b; --rouge-doux:#96543f;
+  --vert:#3d7c47; --vert-voile:#e7eee4; --vert-filet:#b9cdb4;
+}
 *{box-sizing:border-box}
-body{margin:0; background:var(--surface-sunken); color:var(--fg);
-  font-family:var(--font-body); font-size:15px; line-height:1.5; -webkit-font-smoothing:antialiased}
+body{margin:0;background:var(--papier);color:var(--encre);
+  font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:14px;line-height:1.5;
+  -webkit-font-smoothing:antialiased}
+main{max-width:1240px;margin:0 auto;padding:26px 22px 60px}
 
-header{background:var(--fg); color:var(--fg-inverse); padding:26px 24px}
-.bande{max-width:940px; margin:0 auto; display:flex; align-items:baseline; gap:18px; flex-wrap:wrap}
-header .num{font-size:11px; letter-spacing:.28em; text-transform:uppercase; color:var(--fg-faint)}
-header h1{margin:0; font-family:var(--font-display); font-size:25px; font-weight:700; letter-spacing:-.02em}
-header p{margin:0; font-size:13px; color:#b8b8b8; max-width:54ch}
+.entete{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:18px}
+.entete h1{margin:0;font-size:21px;font-weight:800;letter-spacing:-.01em}
+.entete p{margin:0;font-size:13px;color:var(--mut)}
 
-main{max-width:940px; margin:0 auto; padding:26px 24px 24px}
-.bloc{background:var(--surface-card); border:var(--border); border-radius:var(--radius)}
-
-.depot{display:block; padding:34px 22px; text-align:center; cursor:pointer;
-  border-bottom:var(--border); transition:background .12s}
-.depot:hover,.depot.actif{background:var(--surface-sunken)}
-.depot strong{display:block; font-family:var(--font-display); font-size:17px; font-weight:700}
-.depot span{display:block; margin-top:3px; font-size:13px; color:var(--fg-soft)}
+.depot{display:block;background:var(--panneau);border:1.5px dashed var(--filet);
+  border-radius:10px;padding:34px 22px;text-align:center;cursor:pointer;transition:.14s}
+.depot:hover,.depot.actif{border-color:var(--bleu);background:var(--bleu-voile)}
+.depot strong{display:block;font-size:16px;font-weight:700}
+.depot span{display:block;margin-top:3px;font-size:13px;color:var(--mut)}
 .depot input{display:none}
-.regle{height:7px; border-bottom:var(--border);
-  background:repeating-linear-gradient(90deg,var(--line) 0 1px,transparent 1px 14px)}
-
-.exemples{display:flex; flex-wrap:wrap; align-items:stretch; border-bottom:var(--border)}
-.exemples b{font-size:10px; letter-spacing:.2em; text-transform:uppercase; color:var(--fg-soft);
-  padding:11px 14px; border-right:var(--border); display:flex; align-items:center}
-.exemples button{font:inherit; font-size:12.5px; padding:11px 14px; cursor:pointer; background:transparent;
-  border:0; border-right:var(--border); color:var(--fg); text-align:left}
-.exemples button:hover{background:var(--fg); color:var(--fg-inverse)}
-.etat{padding:12px 16px; font-size:13px; color:var(--fg-soft)}
+.exemples{margin-top:12px;display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+.exemples b{font:600 10.5px "Red Hat Mono",monospace;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--mut);margin-right:3px}
+.exemples button{font:500 12px "Red Hat Mono",monospace;padding:6px 11px;cursor:pointer;
+  background:var(--surface);border:1px solid var(--filet);border-radius:16px;color:var(--encre);transition:.12s}
+.exemples button:hover{border-color:var(--bleu);color:var(--bleu);background:var(--bleu-voile)}
+.etat{margin-top:14px;font-size:13px;color:var(--mut)}
 .etat:empty{display:none}
-.etat.charge::after{content:""; display:inline-block; width:6px; height:6px; margin-left:8px;
-  background:var(--accent); animation:bat .9s steps(1) infinite}
+.etat.charge::after{content:"";display:inline-block;width:6px;height:6px;margin-left:8px;
+  border-radius:50%;background:var(--ambre);animation:bat .9s steps(1) infinite}
 @keyframes bat{0%,50%{opacity:1}51%,100%{opacity:0}}
 
 #res:empty{display:none}
-#res>*{animation:entre .3s ease both}
-@keyframes entre{from{opacity:0; transform:translateY(6px)}to{opacity:1; transform:none}}
+#res{margin-top:20px;animation:monte .3s ease both}
+@keyframes monte{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.doc{background:var(--panneau);border:1px solid var(--filet);border-radius:9px;
+  box-shadow:0 1px 3px rgba(0,0,0,.06);overflow:hidden}
 
-.verdict{display:flex; align-items:center; gap:16px; flex-wrap:wrap;
-  padding:18px 22px; border-top:var(--border); border-bottom:var(--border)}
-.tampon{font-family:var(--font-display); font-weight:700; font-size:17px; letter-spacing:.1em;
-  text-transform:uppercase; padding:6px 14px; border:2px solid currentColor}
-.v-fiable{background:var(--success-veil); color:var(--success)}
-.v-a_verifier{background:var(--warning-veil); color:var(--warning)}
-.v-non_exploitable{background:var(--error-veil); color:var(--error)}
-.verdict .info{font-size:12px; color:var(--fg-soft);
-  font-family:ui-monospace,Consolas,monospace; font-variant-numeric:tabular-nums}
+.barre{display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  padding:14px 26px;border-bottom:1px solid var(--filet)}
+.barre .titre{font-weight:800;font-size:15px}
+.puce-fichier{font:500 12px "Red Hat Mono",monospace;color:var(--mut);background:var(--papier);
+  border:1px solid var(--filet);border-radius:6px;padding:5px 10px}
+.actions{margin-left:auto;display:flex;gap:10px}
+.btn{font:600 13px "Bricolage Grotesque",sans-serif;border-radius:7px;padding:8px 14px;
+  cursor:pointer;border:1.5px solid var(--bleu);background:transparent;color:var(--bleu);transition:.12s}
+.btn:hover{background:var(--bleu-voile)}
+.btn.plein{background:var(--bleu);color:#fff}
+.btn.plein:hover{background:var(--bleu-fonce);border-color:var(--bleu-fonce)}
 
-section{padding:20px 22px; border-bottom:var(--border)}
-section:last-of-type{border-bottom:0}
-section h2{margin:0 0 14px; font-family:var(--font-display); font-size:11px; font-weight:700;
-  letter-spacing:.22em; text-transform:uppercase; display:flex; align-items:center; gap:12px}
-section h2::after{content:""; flex:1; height:1px; background:var(--line)}
-section h2 .compte{font-family:ui-monospace,Consolas,monospace; letter-spacing:0; color:var(--fg-soft)}
+.verdict{display:flex;align-items:center;gap:22px;flex-wrap:wrap;padding:20px 26px;border-bottom:2px solid}
+.verdict .rond{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;font-size:24px;font-weight:800;color:var(--panneau);flex:none}
+.verdict .mot{font-size:29px;font-weight:800;letter-spacing:-.01em;line-height:1}
+.verdict .sous{margin-top:5px;font-size:13.5px}
+.verdict .puces{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;
+  font:600 11px "Red Hat Mono",monospace}
+.verdict .puces span{padding:6px 11px;border-radius:20px;background:var(--surface);border:1px solid}
+.v-a_verifier{background:var(--ambre-bande);border-bottom-color:var(--ambre)}
+.v-a_verifier .rond{background:var(--ambre)}
+.v-a_verifier .mot{color:var(--ambre-titre)} .v-a_verifier .sous{color:var(--ambre-texte)}
+.v-fiable{background:var(--vert-voile);border-bottom-color:var(--vert)}
+.v-fiable .rond{background:var(--vert)}
+.v-fiable .mot{color:#2c5c36} .v-fiable .sous{color:#4a6b50}
+.v-non_exploitable{background:var(--rouge-voile);border-bottom-color:var(--rouge)}
+.v-non_exploitable .rond{background:var(--rouge)}
+.v-non_exploitable .mot{color:#8c2f20} .v-non_exploitable .sous{color:var(--rouge-doux)}
+.p-alerte{border-color:var(--ambre-filet)!important;color:var(--ambre-texte)}
+.p-echec{border-color:var(--rouge-filet)!important;color:var(--rouge)}
+.p-ok{border-color:var(--vert-filet)!important;color:var(--vert)}
 
-.champs{display:grid; grid-template-columns:repeat(5,1fr);
-  gap:1px; background:var(--line); border:var(--border)}
-@media(max-width:860px){
-  .champs{grid-template-columns:repeat(2,1fr)}
-  .champ:last-child{grid-column:1/-1}
-}
-.champ{background:var(--surface-card); padding:11px 13px}
-.champ .lib{font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--fg-soft)}
-.champ .val{margin-top:4px; font-family:ui-monospace,Consolas,monospace; font-size:16px;
-  font-variant-numeric:tabular-nums; word-break:break-word}
-.champ .val.nul{color:var(--accent-text); font-size:14px}
-.champ .note{margin-top:5px; font-size:10px; letter-spacing:.13em; text-transform:uppercase}
-.n-illisible{color:var(--accent-text)} .n-absent{color:var(--fg-faint)}
-.champ.tendu{box-shadow:inset 4px 0 0 var(--accent)}
+.grille{display:grid;grid-template-columns:1fr 360px;gap:24px;padding:24px 26px 30px;align-items:start}
+@media(max-width:1000px){.grille{grid-template-columns:1fr}}
+.colonne{display:flex;flex-direction:column;gap:24px}
+.rail{display:flex;flex-direction:column;gap:18px;position:sticky;top:16px}
+@media(max-width:1000px){.rail{position:static}}
+.legende{font:700 12px "Bricolage Grotesque",sans-serif;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--mut);margin-bottom:10px}
 
-table{width:100%; border-collapse:collapse; font-size:14px}
-thead th{font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--fg-soft);
-  text-align:left; font-weight:700; padding:0 10px 8px; border-bottom:2px solid var(--line-strong)}
-tbody td{padding:9px 10px; border-bottom:1px solid var(--line); vertical-align:top}
-tbody tr:last-child td{border-bottom:0}
-td.n,th.n{text-align:right; white-space:nowrap;
-  font-family:ui-monospace,Consolas,monospace; font-variant-numeric:tabular-nums}
-td.calc{color:var(--fg-soft)}
-.note-bas{margin:12px 0 0; font-size:12px; color:var(--fg-soft)}
+.champs{display:grid;grid-template-columns:1.6fr 1fr 1.2fr 1fr 1fr;gap:10px}
+@media(max-width:900px){.champs{grid-template-columns:repeat(2,1fr)}}
+.champ{background:var(--surface);border:1px solid var(--filet);border-radius:8px;padding:12px 14px}
+.champ .lib{font-size:11px;color:var(--mut);margin-bottom:6px}
+.champ .val{font:600 15px "Red Hat Mono",monospace;font-variant-numeric:tabular-nums;word-break:break-word}
+.champ .pourquoi{font-size:10.5px;margin-top:4px;line-height:1.35}
+.champ.illisible{background:var(--ambre-voile);border:1.5px dashed var(--ambre-tirets)}
+.champ.illisible .lib,.champ.illisible .pourquoi{color:var(--ambre-texte)}
+.champ.illisible .val{font-weight:700;color:var(--ambre)}
+.champ.absent .val{color:var(--mut);font-weight:500}
+.champ.absent .pourquoi{color:var(--mut)}
 
-.ctrl{display:grid; grid-template-columns:22px 208px 1fr; gap:12px; align-items:start;
-  padding:9px 0; border-bottom:1px solid var(--line)}
-.ctrl:last-of-type{border-bottom:0}
-.marque{font-family:ui-monospace,Consolas,monospace; font-weight:700; text-align:center}
-.m-ok{color:var(--success)} .m-echec{color:var(--accent)} .m-non_applicable{color:var(--fg-faint)}
-.ctrl .nom{font-family:ui-monospace,Consolas,monospace; font-size:12px; color:var(--fg-soft)}
-.ctrl .txt{font-size:13.5px}
-.ctrl.echec .txt{color:var(--accent-text)}
+.tableau{background:var(--surface);border:1px solid var(--filet);border-radius:8px;overflow:hidden}
+.tl{display:grid;grid-template-columns:1fr 62px 112px 122px;padding:9px 16px}
+.tl.tete{font-size:11px;font-weight:700;color:var(--mut);background:var(--panneau);
+  border-bottom:1px solid var(--filet)}
+.tl.corps{font-size:13px;border-bottom:1px solid var(--filet-doux)}
+.tl.corps:last-of-type{border-bottom:0}
+.tl .n{text-align:right;font:500 13px "Red Hat Mono",monospace;font-variant-numeric:tabular-nums}
+.tl .n.fort{font-weight:600}
+.tl .n.calc{color:var(--mut)}
+.somme{display:flex;justify-content:flex-end;gap:18px;padding:10px 16px;
+  border-top:1.5px solid var(--encre);background:var(--panneau);
+  font:600 13px "Red Hat Mono",monospace;font-variant-numeric:tabular-nums}
+.somme .etiq{color:var(--mut);font-weight:500}
+.somme.discordante{background:var(--rouge-voile)}
+.somme.discordante .valeur{color:var(--rouge)}
+.note{margin-top:10px;font-size:12px;color:var(--mut);font-style:italic}
+.vide{font-size:13px;color:var(--mut);font-style:italic}
 
-.av{display:grid; grid-template-columns:74px 1fr; gap:14px;
-  padding:13px 0; border-bottom:1px solid var(--line)}
-.av:last-of-type{border-bottom:0}
-.grav{font-size:9.5px; font-weight:700; letter-spacing:.14em; text-transform:uppercase;
-  padding:4px 0; text-align:center; height:fit-content; border:1px solid currentColor}
-.g-info{background:var(--surface-sunken); color:var(--fg-soft)}
-.g-alerte{background:var(--warning-veil); color:var(--warning)}
-.g-bloquant{background:var(--error-veil); color:var(--error)}
-.av .code{font-family:ui-monospace,Consolas,monospace; font-size:11px; color:var(--fg-soft)}
-.av .msg{margin-top:3px; font-size:13.5px}
+.carte{background:var(--surface);border:1px solid var(--filet);border-radius:8px;padding:16px 18px}
+.ctrl{display:flex;gap:10px;align-items:baseline;font-size:13px;padding:4px 0}
+.ctrl .marque{font:700 13px "Red Hat Mono",monospace;flex:none}
+.ctrl small{display:block;font-size:11.5px;line-height:1.35;color:var(--mut)}
+.c-ok .marque{color:var(--vert)}
+.c-echec{background:var(--rouge-voile);border-radius:6px;padding:8px 10px;margin:2px -10px}
+.c-echec .marque{color:var(--rouge)} .c-echec b{color:var(--rouge)}
+.c-echec small{color:var(--rouge-doux)}
+.c-non_applicable{color:var(--mut)} .c-non_applicable .marque{color:var(--pointille)}
 
-.jauge{margin-top:12px; padding:12px 14px; background:var(--surface-sunken); border:1px solid var(--line)}
-.jauge .ecarte{font-family:ui-monospace,Consolas,monospace; font-size:15px; color:var(--accent-text);
-  text-decoration:line-through; text-decoration-thickness:2px}
-.jauge .piste{position:relative; height:10px; margin:10px 0 6px;
-  background:var(--surface-card); border:1px solid var(--line-strong)}
-.jauge .rempli{position:absolute; top:0; bottom:0; left:0; background:var(--accent)}
-.jauge .seuil{position:absolute; top:-5px; bottom:-5px; width:2px; background:var(--fg)}
-.jauge .grad{display:flex; justify-content:space-between; font-size:11px;
-  font-family:ui-monospace,Consolas,monospace; color:var(--fg-soft)}
-.jauge .grad .bas{color:var(--accent-text); font-weight:700}
+.av{border-radius:7px;padding:12px 14px;font-size:13px;line-height:1.45}
+.av + .av{margin-top:10px}
+.av .code{font:600 10.5px "Red Hat Mono",monospace;letter-spacing:.06em;
+  text-transform:uppercase;display:block;margin-bottom:4px;opacity:.75}
+.a-alerte{background:var(--ambre-voile);border:1px solid var(--ambre-filet)}
+.a-bloquant{background:var(--rouge-voile);border:1px solid var(--rouge-filet)}
+.a-info{background:var(--panneau);border:1px solid var(--filet);color:var(--doux)}
 
-details{padding:16px 22px 22px; border-top:var(--border)}
-summary{cursor:pointer; font-size:10px; letter-spacing:.2em; text-transform:uppercase; color:var(--fg-soft)}
-summary:hover{color:var(--fg)}
-pre{margin:12px 0 0; padding:15px; background:var(--fg); color:var(--fg-inverse); overflow:auto;
-  font-family:ui-monospace,Consolas,monospace; font-size:11.5px; line-height:1.5}
-.erreur{padding:20px 22px; border-top:var(--border); color:var(--accent-text)}
-footer{max-width:940px; margin:0 auto; padding:0 24px 40px; font-size:11.5px; color:var(--fg-faint)}
-@media(max-width:620px){
-  .ctrl{grid-template-columns:20px 1fr; row-gap:2px}
-  .ctrl .txt{grid-column:2}
-}
+.jauge{margin-top:11px}
+.jauge .lu{font:600 13px "Red Hat Mono",monospace}
+.jauge .piste{position:relative;height:8px;background:var(--jauge);border-radius:4px;margin:11px 0 5px}
+.jauge .rempli{position:absolute;left:0;top:0;bottom:0;background:var(--ambre-tirets);border-radius:4px 0 0 4px}
+.jauge .seuil{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--encre)}
+.jauge .grad{display:flex;justify-content:space-between;
+  font:500 11px "Red Hat Mono",monospace;color:var(--ambre-texte)}
+.jauge .grad .s{color:var(--encre)}
+
+details{border-top:1px solid var(--filet);padding:14px 26px 20px}
+summary{cursor:pointer;font:600 11px "Red Hat Mono",monospace;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--mut)}
+summary:hover{color:var(--encre)}
+pre{margin:12px 0 0;padding:16px;background:#241f18;color:#e8dfcb;border-radius:7px;overflow:auto;
+  font-family:"Red Hat Mono",Consolas,monospace;font-size:11.5px;line-height:1.5}
+.erreur{background:var(--rouge-voile);border:1px solid var(--rouge-filet);color:var(--rouge);
+  border-radius:8px;padding:16px 18px;font-size:13.5px}
+footer{max-width:1240px;margin:0 auto;padding:0 22px 36px;font-size:11.5px;color:var(--mut)}
 </style></head><body>
 
-<header><div class="bande">
-  <span class="num">01</span>
-  <h1>Lecture de facture</h1>
-  <p>Ce qui n&#39;a pas ete lu de facon sure est signale et laisse vide. Aucune valeur n&#39;est devinee.</p>
-</div></header>
-
 <main>
-  <div class="bloc">
-    <label class="depot" id="depot">
-      <strong>Deposer une facture PDF</strong>
-      <span>ou cliquer pour choisir un fichier</span>
-      <input type="file" id="fichier" accept="application/pdf">
-    </label>
-    <div class="regle"></div>
-    <div class="exemples" id="exemples"></div>
-    <div class="etat" id="etat"></div>
-    <div id="res"></div>
+  <div class="entete">
+    <h1>Controle factures</h1>
+    <p>Ce qui n&#39;a pas ete lu de facon sure est signale et laisse vide. Aucune valeur n&#39;est devinee.</p>
   </div>
+
+  <label class="depot" id="depot">
+    <strong>Deposer une facture PDF</strong>
+    <span>ou cliquer pour choisir un fichier</span>
+    <input type="file" id="fichier" accept="application/pdf">
+  </label>
+  <div class="exemples" id="exemples"></div>
+  <div class="etat" id="etat"></div>
+  <div id="res"></div>
 </main>
 
 <footer>Extraction par l&#39;API Mistral. Verifications arithmetiques par le programme, sans modele.</footer>
@@ -327,9 +283,10 @@ footer{max-width:940px; margin:0 auto; padding:0 24px 40px; font-size:11.5px; co
 const $ = s => document.querySelector(s);
 const depot = $("#depot"), input = $("#fichier"), etat = $("#etat"), res = $("#res");
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-const eur = v => v == null ? null
-  : v.toLocaleString("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2}) + " EUR";
-const pc  = v => v == null ? "n/a" : Math.round(v*100) + " %";
+const nb = v => v.toLocaleString("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2});
+const eur = v => v == null ? null : nb(v) + " €";
+const pc = v => v == null ? "n/a" : Math.round(v*100) + " %";
+let dernier = null;
 
 ["dragenter","dragover"].forEach(e=>depot.addEventListener(e,ev=>{ev.preventDefault();depot.classList.add("actif")}));
 ["dragleave","drop"].forEach(e=>depot.addEventListener(e,ev=>{ev.preventDefault();depot.classList.remove("actif")}));
@@ -346,7 +303,6 @@ fetch("/api/exemples").then(r=>r.json()).then(l=>{
     b.onclick = () => chargerExemple(n);
     z.appendChild(b);
   });
-  // Lien direct : /#facture_2_studio_botanica.pdf charge l'exemple a l'ouverture.
   const cible = decodeURIComponent(location.hash.slice(1));
   if (cible && l.includes(cible)) chargerExemple(cible);
 });
@@ -365,80 +321,135 @@ async function envoyer(f){
     const d = await r.json();
     etat.className = "etat"; etat.textContent = "";
     if(!r.ok){ res.innerHTML = '<div class="erreur">' + esc(d.erreur) + '</div>'; return; }
-    afficher(d, f.name);
+    dernier = d; afficher(d, f.name);
   }catch(e){ etat.className="etat"; etat.textContent = "Erreur reseau : " + e.message; }
 }
 
 function champ(nom, libelle, d){
   const e = d.meta.etats_champs[nom], v = d[nom];
   const aff = typeof v === "number" ? eur(v) : v;
-  const corps = v == null
-    ? '<div class="val nul">' + (e === "illisible" ? "non lu" : "sans objet") + '</div>'
-    : '<div class="val">' + esc(aff) + '</div>';
-  const note = e === "lu" ? ""
-    : '<div class="note n-' + e + '">' + (e === "illisible" ? "illisible sur le document" : "absent du document") + '</div>';
-  return '<div class="champ' + (e === "illisible" ? " tendu" : "") + '">'
-       + '<div class="lib">' + libelle + '</div>' + corps + note + '</div>';
+  const corps = '<div class="val">' + (v == null ? (e === "illisible" ? "non lu" : "—") : esc(aff)) + '</div>';
+  let pourquoi = "";
+  if (e === "illisible") {
+    const a = (d.avertissements||[]).find(x => x.champ === nom && x.confiance != null);
+    pourquoi = '<div class="pourquoi">' + (a
+      ? "confiance OCR " + Math.round(a.confiance*100) + " % &lt; seuil " + Math.round(a.seuil*100) + " %"
+      : "illisible sur le document") + '</div>';
+  } else if (e === "absent") {
+    pourquoi = '<div class="pourquoi">absent du document</div>';
+  }
+  return '<div class="champ ' + e + '"><div class="lib">' + libelle + '</div>' + corps + pourquoi + '</div>';
 }
 
 function jauge(a){
   if(a.confiance == null || a.seuil == null) return "";
   const c = a.confiance*100, s = a.seuil*100;
   return '<div class="jauge">'
-    + '<div>lecture ecartee : <span class="ecarte">' + esc(a.valeur_ecartee ?? "") + '</span></div>'
+    + '<div>Lecture ecartee : <span class="lu">' + esc(a.valeur_ecartee ?? "") + '</span></div>'
     + '<div class="piste"><div class="rempli" style="width:' + c.toFixed(1) + '%"></div>'
-    + '<div class="seuil" style="left:' + s.toFixed(1) + '%" title="seuil d\'acceptation"></div></div>'
-    + '<div class="grad"><span class="bas">confiance ' + c.toFixed(0) + ' %</span>'
-    + '<span>seuil ' + s.toFixed(0) + ' %</span></div></div>';
+    + '<div class="seuil" style="left:' + s.toFixed(1) + '%"></div></div>'
+    + '<div class="grad"><span>confiance ' + c.toFixed(0) + ' %</span>'
+    + '<span class="s">seuil ' + s.toFixed(0) + ' %</span></div></div>';
 }
 
 function afficher(d, nom){
   const m = d.meta, st = m.statut_global;
-  const mot = {fiable:"Exploitable", a_verifier:"A verifier", non_exploitable:"Non exploitable"}[st] || st;
+  const mot = {fiable:"Exploitable", a_verifier:"À vérifier", non_exploitable:"Non exploitable"}[st] || st;
+  const glyphe = {fiable:"✓", a_verifier:"!", non_exploitable:"✕"}[st] || "?";
   const echecs = m.controles.filter(c=>c.resultat === "echec").length;
-  const marques = {ok:"\u2713", echec:"\u2715", non_applicable:"\u2013"};
+  const ok = m.controles.filter(c=>c.resultat === "ok").length;
+  const nonLus = Object.entries(m.etats_champs).filter(([,e])=>e === "illisible").map(([c])=>c);
 
-  const lignes = d.lignes_produits.length
-    ? '<table><thead><tr><th>Designation</th><th class="n">Qte</th><th class="n">P.U. HT</th><th class="n">Total</th></tr></thead><tbody>'
-      + d.lignes_produits.map(l =>
-          '<tr><td>' + (l.designation == null ? '<span class="val nul">non lu</span>' : esc(l.designation)) + '</td>'
-          + '<td class="n">' + (l.quantite ?? "\u2013") + '</td>'
-          + '<td class="n">' + (eur(l.prix_unitaire) ?? "\u2013") + '</td>'
-          + '<td class="n calc">' + (eur(l.total_ligne) ?? "\u2013") + '</td></tr>').join("")
-      + '</tbody></table><p class="note-bas">La colonne Total est calculee par le programme, elle n\'est pas lue sur le document.</p>'
-    : '<p class="note-bas">Aucune ligne n\'a pu etre extraite.</p>';
+  // Le resume doit couvrir TOUTES les causes du verdict, y compris un
+  // avertissement bloquant qui ne vient d'aucun controle en echec : sans ca,
+  // un document « non exploitable » pouvait s'annoncer comme coherent.
+  const bloquants = d.avertissements.filter(a => a.gravite === "bloquant");
+  const bouts = [];
+  if (bloquants.length) bouts.push(bloquants.length + " point" + (bloquants.length>1?"s":"") + " bloquant" + (bloquants.length>1?"s":""));
+  if (nonLus.length) bouts.push(nonLus.length + " champ" + (nonLus.length>1?"s":"") + " non lu" + (nonLus.length>1?"s":""));
+  if (echecs) bouts.push(echecs + " controle" + (echecs>1?"s":"") + " en echec");
+  const sous = bouts.length
+    ? bouts.join(" · ") + (st === "non_exploitable" ? "" : " — le reste est coherent")
+    : "Tous les controles applicables sont coherents.";
+
+  const puces = [];
+  bloquants.forEach(a => puces.push('<span class="p-echec">' + esc(a.code.replace(/_/g," ")) + "</span>"));
+  nonLus.forEach(c => puces.push('<span class="p-alerte">' + c.replace(/_/g," ").toUpperCase() + " NON LU</span>"));
+  if (echecs) puces.push('<span class="p-echec">CONTROLE ' + echecs + "/" + m.controles.length + " EN ECHEC</span>");
+  if (!puces.length) puces.push('<span class="p-ok">' + ok + "/" + m.controles.length + " CONTROLES OK</span>");
+
+  const chiffrees = d.lignes_produits.filter(l => l.total_ligne != null);
+  const somme = chiffrees.length ? chiffrees.reduce((s,l)=>s+l.total_ligne, 0) : null;
+  const discordante = somme != null && d.total_HT != null
+                      && chiffrees.length === d.lignes_produits.length
+                      && Math.abs(somme - d.total_HT) > 0.011;
+
+  const lignes = d.lignes_produits.length ? (
+    '<div class="tableau">'
+    + '<div class="tl tete"><div>Designation</div><div class="n">Qte</div><div class="n">PU HT</div><div class="n">Total</div></div>'
+    + d.lignes_produits.map(l =>
+        '<div class="tl corps"><div>' + (l.designation == null ? '<span class="vide">non lu</span>' : esc(l.designation)) + '</div>'
+        + '<div class="n">' + (l.quantite ?? "–") + '</div>'
+        + '<div class="n">' + (l.prix_unitaire == null ? "–" : nb(l.prix_unitaire)) + '</div>'
+        + '<div class="n fort calc">' + (l.total_ligne == null ? "–" : nb(l.total_ligne)) + '</div></div>').join("")
+    + (somme != null
+        ? '<div class="somme' + (discordante ? " discordante" : "") + '"><div class="etiq">Somme des lignes'
+          + (chiffrees.length < d.lignes_produits.length
+             ? " (" + chiffrees.length + "/" + d.lignes_produits.length + " chiffrees)" : "")
+          + '</div><div class="valeur">' + eur(somme) + '</div></div>'
+        : "")
+    + '</div><p class="note">La colonne Total et la somme sont calculees par le programme, elles ne sont pas lues sur le document.</p>'
+  ) : '<p class="vide">Aucune ligne n\'a pu etre extraite.</p>';
 
   res.innerHTML =
-    '<div class="verdict v-' + st + '"><span class="tampon">' + mot + '</span>'
-  + '<span class="info">' + esc(nom) + ' &nbsp;/&nbsp; ' + m.duree_ms + ' ms &nbsp;/&nbsp; lecture '
-  + pc(m.confiance_ocr_moyenne) + ' &nbsp;/&nbsp; ' + echecs + ' controle(s) en echec &nbsp;/&nbsp; '
-  + d.avertissements.length + ' avertissement(s)</span></div>'
+    '<div class="doc">'
+  + '<div class="barre"><span class="titre">Controle factures</span>'
+  + '<span class="puce-fichier">' + esc(nom) + " · lecture " + pc(m.confiance_ocr_moyenne)
+  + " · analysee en " + (m.duree_ms/1000).toFixed(1).replace(".", ",") + ' s</span>'
+  + '<span class="actions"><button class="btn" id="btn-json">Telecharger le JSON</button>'
+  + '<button class="btn plein" id="btn-autre">Analyser une autre facture</button></span></div>'
 
-  + '<section><h2>Facture</h2><div class="champs">'
+  + '<div class="verdict v-' + st + '"><div class="rond">' + glyphe + '</div>'
+  + '<div><div class="mot">' + mot + '</div><div class="sous">' + sous + '</div></div>'
+  + '<div class="puces">' + puces.join("") + '</div></div>'
+
+  + '<div class="grille"><div class="colonne">'
+  + '<div><div class="legende">Champs extraits</div><div class="champs">'
   + champ("nom_fournisseur","Fournisseur",d) + champ("date","Date",d)
-  + champ("numero_facture","Numero",d) + champ("total_HT","Total HT",d)
-  + champ("total_TTC","Total TTC",d) + '</div></section>'
+  + champ("numero_facture","N° de facture",d) + champ("total_HT","Total HT",d)
+  + champ("total_TTC","Total TTC",d) + '</div></div>'
+  + '<div><div class="legende">Lignes de la facture</div>' + lignes + '</div>'
+  + '</div>'
 
-  + '<section><h2>Lignes <span class="compte">' + d.lignes_produits.length + '</span></h2>' + lignes + '</section>'
+  + '<div class="rail">'
+  + '<div class="carte"><div class="legende">Verifications arithmetiques · ' + ok + "/" + m.controles.length + '</div>'
+  + m.controles.map(c => {
+      const marque = {ok:"✓", echec:"✗", non_applicable:"–"}[c.resultat];
+      return '<div class="ctrl c-' + c.resultat + '"><span class="marque">' + marque + '</span>'
+        + '<div><b>' + esc(c.nom.replace(/_/g," ")) + '</b><small>' + esc(c.detail) + '</small></div></div>';
+    }).join("")
+  + '<p class="note">Faites par le programme, sans intervention d\'un modele.</p></div>'
 
-  + '<section><h2>Verifications</h2>'
-  + m.controles.map(c => '<div class="ctrl ' + c.resultat + '">'
-      + '<span class="marque m-' + c.resultat + '">' + (marques[c.resultat] || "?") + '</span>'
-      + '<span class="nom">' + esc(c.nom) + '</span>'
-      + '<span class="txt">' + esc(c.detail) + '</span></div>').join("")
-  + '<p class="note-bas">Ces verifications sont faites par le programme, sans intervention d\'un modele.</p></section>'
-
-  + '<section><h2>Avertissements <span class="compte">' + d.avertissements.length + '</span></h2>'
+  + '<div class="carte"><div class="legende">Avertissements · ' + d.avertissements.length + '</div>'
   + (d.avertissements.length
-      ? d.avertissements.map(a => '<div class="av"><span class="grav g-' + a.gravite + '">' + a.gravite + '</span>'
-          + '<div><div class="code">' + esc(a.code) + (a.champ ? " &rarr; " + esc(a.champ) : "") + '</div>'
-          + '<div class="msg">' + esc(a.message) + '</div>' + jauge(a) + '</div></div>').join("")
-      : '<p class="note-bas">Aucun.</p>')
-  + '</section>'
+      ? d.avertissements.map(a => '<div class="av a-' + a.gravite + '">'
+          + '<span class="code">' + esc(a.code) + (a.champ ? " → " + esc(a.champ) : "") + '</span>'
+          + esc(a.message) + jauge(a) + '</div>').join("")
+      : '<p class="vide">Aucun.</p>')
+  + '</div></div></div>'
 
-  + '<details><summary>Donnees completes (JSON)</summary><pre>' + esc(JSON.stringify(d,null,2)) + '</pre></details>';
+  + '<details><summary>Donnees completes (JSON)</summary><pre>' + esc(JSON.stringify(d,null,2)) + '</pre></details>'
+  + '</div>';
 
-  [...res.children].forEach((el,i)=>{ el.style.animationDelay = (i*55) + "ms" });
+  $("#btn-json").onclick = () => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(dernier,null,2)], {type:"application/json"}));
+    a.download = nom.replace(/\.pdf$/i,"") + ".json"; a.click(); URL.revokeObjectURL(a.href);
+  };
+  $("#btn-autre").onclick = () => {
+    res.innerHTML = ""; history.replaceState(null,"",location.pathname);
+    depot.scrollIntoView({behavior:"smooth", block:"center"});
+  };
 }
 </script></body></html>
 """
