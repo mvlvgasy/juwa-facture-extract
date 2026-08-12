@@ -120,7 +120,7 @@ def controler(
             t = min(compatibles, key=lambda t: abs(t - taux))
             ajoute(Controle(
                 nom="taux_tva", resultat=ResultatControle.OK,
-                detail=f"TTC compatible avec le {TAUX_TVA_CONNUS[t]} ({t} %), taux apparent {taux:.2f} %.",
+                detail=f"TTC compatible avec une TVA a {t} % ({TAUX_TVA_CONNUS[t]}).",
                 trouve=taux, attendu=t))
         else:
             proche = min(TAUX_TVA_CONNUS, key=lambda t: abs(t - taux))
