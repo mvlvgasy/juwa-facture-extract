@@ -13,6 +13,13 @@ qu'on lit les valeurs, au lieu d'etre relegue en bas de page. La somme des
 lignes est recalculee juste sous le tableau, a cote du total imprime : c'est
 ce rapprochement qui rend un ecart visible sans avoir a le chercher.
 
+Deuxieme parti pris : l'ecran ne s'arrete pas au constat. Signaler qu'un
+montant est douteux sans permettre de le trancher laisserait l'utilisateur
+devant un cul-de-sac. Le document d'origine s'ouvre donc a cote des valeurs,
+et un mode correction permet de reprendre a la main ce que la lecture
+automatique n'a pas su etablir. La reprise ne contourne pas les controles :
+elle les relance.
+
 Choix technique : une seule page, servie par le meme processus que l'API,
 sans etape de build ni dependance front. Le projet s'installe avec un
 `pip install` et se lance avec une commande, ce qui tient la contrainte de
@@ -26,8 +33,10 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from pydantic import BaseModel, Field
 
-from .pipeline import traiter
+from .pipeline import revalider, traiter
+from .schema import Facture
 
 app = FastAPI(title="Extraction de factures", docs_url="/api")
 
@@ -87,6 +96,30 @@ def api_extraire(fichier: UploadFile = File(...)) -> JSONResponse:
                        f"Verifier que le fichier est un PDF valide et reessayer."},
             status_code=500)
     return JSONResponse(facture.model_dump(mode="json"))
+
+
+class DemandeRevalidation(BaseModel):
+    """Corps de `/api/revalider` : le document lu, et ce que l'humain corrige."""
+
+    facture: Facture
+    corrections: dict = Field(
+        default_factory=dict,
+        description="Champs a plat et/ou `lignes_produits`. Un champ absent n'est pas touche.")
+
+
+@app.post("/api/revalider")
+def api_revalider(demande: DemandeRevalidation) -> JSONResponse:
+    """Rejoue les controles sur des valeurs corrigees a la main.
+
+    Aucun appel a l'API : on ne relit pas le document, on recalcule. La
+    correction est donc instantanee et gratuite, ce qui compte quand un
+    comptable reprend cinquante factures dans la journee.
+    """
+    try:
+        corrigee = revalider(demande.facture, demande.corrections)
+    except ValueError as e:
+        return JSONResponse({"erreur": str(e)}, status_code=400)
+    return JSONResponse(corrigee.model_dump(mode="json"))
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -204,6 +237,53 @@ main{max-width:1240px;margin:0 auto;padding:26px 22px 60px}
 .champ.illisible .val{font-weight:700;color:var(--ambre)}
 .champ.absent .val{color:var(--mut);font-weight:500}
 .champ.absent .pourquoi{color:var(--mut)}
+.champ.corrige{background:var(--bleu-voile);border:1.5px solid var(--bleu)}
+.champ.corrige .lib,.champ.corrige .pourquoi{color:var(--bleu-fonce)}
+.champ.corrige .val{color:var(--bleu-fonce)}
+
+/* Mode correction. La saisie reprend la chasse fixe des valeurs : on remplace
+   un chiffre par un chiffre, la ligne ne doit pas sauter en passant en edition. */
+.saisie{width:100%;background:var(--surface);color:var(--encre);border:1.5px solid var(--bleu);
+  border-radius:5px;padding:4px 7px;font:600 15px "Red Hat Mono",monospace;
+  font-variant-numeric:tabular-nums}
+.saisie:focus{outline:2px solid var(--bleu);outline-offset:1px}
+.saisie::placeholder{font-weight:400;color:var(--mut)}
+.tl .saisie{font-size:13px;font-weight:500}
+.tl .saisie.n{text-align:right}
+.bandeau-edition{padding:11px 26px;background:var(--bleu-voile);border-bottom:1px solid var(--bleu);
+  font-size:13px;color:var(--bleu-fonce)}
+.p-corr{border-color:var(--bleu)!important;color:var(--bleu)}
+.corr{font-size:12.5px;padding:5px 0;border-bottom:1px solid var(--filet-doux)}
+.corr:last-of-type{border-bottom:0}
+.corr b{font:600 12px "Red Hat Mono",monospace;color:var(--bleu-fonce)}
+.corr .fleche{font-family:"Red Hat Mono",monospace;color:var(--mut)}
+.corr .apres{font:600 12.5px "Red Hat Mono",monospace}
+.corr .avant{font:400 12.5px "Red Hat Mono",monospace;color:var(--mut);text-decoration:line-through}
+/* Rien n'avait ete lu : barrer « vide » n'aurait aucun sens. */
+.corr .avant.neant{text-decoration:none;font-style:italic}
+
+/* Volet du document source. Il pousse le contenu au lieu de le recouvrir :
+   comparer une valeur lue au papier suppose de voir les deux a la fois.
+   Largeur calee a 560 px et pas davantage : au-dela, la visionneuse PDF de
+   Chrome deplie d'elle-meme son volet de vignettes, qui mange la moitie de la
+   place sans rien apporter sur un document d'une page. */
+.volet{position:fixed;top:0;right:0;bottom:0;width:min(560px,46vw);z-index:20;
+  display:flex;flex-direction:column;background:var(--panneau);
+  border-left:1px solid var(--filet);box-shadow:-8px 0 24px rgba(0,0,0,.10)}
+.volet[hidden]{display:none}
+.volet .tete{display:flex;align-items:center;gap:12px;padding:12px 16px;
+  border-bottom:1px solid var(--filet);font-weight:700;font-size:14px}
+.volet .tete button{margin-left:auto}
+.volet iframe{flex:1;width:100%;border:0;background:#3a352c}
+body.avec-pdf main,body.avec-pdf footer{max-width:none;margin-right:min(560px,46vw)}
+/* Volet ouvert : la place manque pour cinq colonnes, et un champ date tronque
+   dans sa case est precisement ce qu'on demande a l'utilisateur de relire. */
+body.avec-pdf .champs{grid-template-columns:repeat(3,1fr)}
+body.avec-pdf .grille{grid-template-columns:1fr 300px;gap:16px;padding:20px}
+@media(max-width:820px){
+  .volet{width:100vw}
+  body.avec-pdf main,body.avec-pdf footer{margin-right:0}
+}
 
 .tableau{background:var(--surface);border:1px solid var(--filet);border-radius:8px;overflow:hidden}
 .tl{display:grid;grid-template-columns:1fr 62px 112px 122px;padding:9px 16px}
@@ -211,6 +291,7 @@ main{max-width:1240px;margin:0 auto;padding:26px 22px 60px}
   border-bottom:1px solid var(--filet)}
 .tl.corps{font-size:13px;border-bottom:1px solid var(--filet-doux)}
 .tl.corps:last-of-type{border-bottom:0}
+.tl.edite{grid-template-columns:1fr 84px 124px 96px;gap:8px;align-items:center}
 .tl .n{text-align:right;font:500 13px "Red Hat Mono",monospace;font-variant-numeric:tabular-nums}
 .tl .n.fort{font-weight:600}
 .tl .n.calc{color:var(--mut)}
@@ -277,6 +358,12 @@ footer{max-width:1240px;margin:0 auto;padding:0 22px 36px;font-size:11.5px;color
   <div id="res"></div>
 </main>
 
+<aside class="volet" id="volet" hidden>
+  <div class="tete">Document source
+    <button class="btn" id="fermer-pdf">Fermer</button></div>
+  <iframe id="cadre-pdf" title="Facture d&#39;origine"></iframe>
+</aside>
+
 <footer>Extraction par l&#39;API Mistral. Verifications arithmetiques par le programme, sans modele.</footer>
 
 <script>
@@ -286,7 +373,17 @@ const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;
 const nb = v => v.toLocaleString("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2});
 const eur = v => v == null ? null : nb(v) + " €";
 const pc = v => v == null ? "n/a" : Math.round(v*100) + " %";
-let dernier = null;
+// Etat courant : le document analyse, son nom, l'URL locale du PDF depose
+// (jamais renvoye au serveur, il y est deja passe une fois) et le mode.
+let dernier = null, nomCourant = "", urlPdf = null, edition = false;
+
+const volet = $("#volet"), cadrePdf = $("#cadre-pdf");
+$("#fermer-pdf").onclick = () => montrerPdf(false);
+function montrerPdf(ouvrir){
+  volet.hidden = !ouvrir;
+  document.body.classList.toggle("avec-pdf", ouvrir);
+  if (ouvrir && cadrePdf.src !== urlPdf) cadrePdf.src = urlPdf || "";
+}
 
 ["dragenter","dragover"].forEach(e=>depot.addEventListener(e,ev=>{ev.preventDefault();depot.classList.add("actif")}));
 ["dragleave","drop"].forEach(e=>depot.addEventListener(e,ev=>{ev.preventDefault();depot.classList.remove("actif")}));
@@ -303,8 +400,14 @@ fetch("/api/exemples").then(r=>r.json()).then(l=>{
     b.onclick = () => chargerExemple(n);
     z.appendChild(b);
   });
-  const cible = decodeURIComponent(location.hash.slice(1));
-  if (cible && l.includes(cible)) chargerExemple(cible);
+  const ouvrirDepuisUrl = () => {
+    const cible = decodeURIComponent(location.hash.slice(1));
+    if (cible && l.includes(cible)) chargerExemple(cible);
+  };
+  ouvrirDepuisUrl();
+  // Changer le fragment ne recharge pas la page : sans cet ecouteur, passer
+  // d'une facture a l'autre par l'URL ne ferait rien du tout.
+  addEventListener("hashchange", ouvrirDepuisUrl);
 });
 
 async function chargerExemple(n){
@@ -315,28 +418,74 @@ async function chargerExemple(n){
 
 async function envoyer(f){
   res.innerHTML = ""; etat.className = "etat charge"; etat.textContent = "Lecture de " + f.name;
+  montrerPdf(false); cadrePdf.removeAttribute("src");
+  if (urlPdf) URL.revokeObjectURL(urlPdf);
+  urlPdf = URL.createObjectURL(f); nomCourant = f.name; edition = false;
   const fd = new FormData(); fd.append("fichier", f);
   try{
     const r = await fetch("/api/extraire",{method:"POST",body:fd,signal:AbortSignal.timeout(180000)});
     const d = await r.json();
     etat.className = "etat"; etat.textContent = "";
     if(!r.ok){ res.innerHTML = '<div class="erreur">' + esc(d.erreur) + '</div>'; return; }
-    dernier = d; afficher(d, f.name);
+    dernier = d; afficher(d);
+  }catch(e){ etat.className="etat"; etat.textContent = "Erreur reseau : " + e.message; }
+}
+
+// Ce qui est envoye a /api/revalider : uniquement les champs presents a
+// l'ecran. Un champ jamais affiche n'est pas transmis, donc pas ecrase.
+function collecter(){
+  const c = {};
+  res.querySelectorAll("[data-champ]").forEach(i => { c[i.dataset.champ] = i.value; });
+  const lignes = [];
+  res.querySelectorAll("[data-ligne]").forEach(i => {
+    const k = Number(i.dataset.ligne);
+    lignes[k] = lignes[k] || {};
+    lignes[k][i.dataset.col] = i.value;
+  });
+  if (lignes.length) c.lignes_produits = lignes;
+  return c;
+}
+
+async function valider(){
+  etat.className = "etat charge"; etat.textContent = "Application des corrections";
+  try{
+    const r = await fetch("/api/revalider",{method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({facture: dernier, corrections: collecter()})});
+    const d = await r.json();
+    etat.className = "etat"; etat.textContent = "";
+    if(!r.ok){ etat.textContent = d.erreur || "Correction refusee."; return; }
+    dernier = d; edition = false; afficher(d);
   }catch(e){ etat.className="etat"; etat.textContent = "Erreur reseau : " + e.message; }
 }
 
 function champ(nom, libelle, d){
   const e = d.meta.etats_champs[nom], v = d[nom];
   const aff = typeof v === "number" ? eur(v) : v;
-  const corps = '<div class="val">' + (v == null ? (e === "illisible" ? "non lu" : "—") : esc(aff)) + '</div>';
-  let pourquoi = "";
-  if (e === "illisible") {
-    const a = (d.avertissements||[]).find(x => x.champ === nom && x.confiance != null);
-    pourquoi = '<div class="pourquoi">' + (a
-      ? "confiance OCR " + Math.round(a.confiance*100) + " % &lt; seuil " + Math.round(a.seuil*100) + " %"
-      : "illisible sur le document") + '</div>';
-  } else if (e === "absent") {
-    pourquoi = '<div class="pourquoi">absent du document</div>';
+  const alerte = (d.avertissements||[]).find(x => x.champ === nom && x.confiance != null);
+
+  let corps, pourquoi = "";
+  if (edition) {
+    // La valeur part telle qu'affichee, separateurs francais compris : le
+    // serveur sait relire « 1 040,00 ». Ce qui a ete lu puis ecarte devient
+    // un indice de saisie, pas une valeur pre-remplie qu'on validerait par
+    // inadvertance.
+    const saisie = v == null ? "" : (typeof v === "number" ? nb(v) : String(v));
+    const indice = alerte ? "lu « " + alerte.valeur_ecartee + " », ecarte"
+                          : (e === "illisible" ? "non lu" : "absent du document");
+    corps = '<input class="saisie" data-champ="' + nom + '" value="' + esc(saisie)
+          + '" placeholder="' + esc(indice) + '" autocomplete="off">';
+  } else {
+    corps = '<div class="val">' + (v == null ? (e === "illisible" ? "non lu" : "—") : esc(aff)) + '</div>';
+    if (e === "illisible") {
+      pourquoi = '<div class="pourquoi">' + (alerte
+        ? "confiance OCR " + Math.round(alerte.confiance*100) + " % &lt; seuil " + Math.round(alerte.seuil*100) + " %"
+        : "illisible sur le document") + '</div>';
+    } else if (e === "absent") {
+      pourquoi = '<div class="pourquoi">absent du document</div>';
+    } else if (e === "corrige") {
+      pourquoi = '<div class="pourquoi">saisi a la main</div>';
+    }
   }
   return '<div class="champ ' + e + '"><div class="lib">' + libelle + '</div>' + corps + pourquoi + '</div>';
 }
@@ -352,8 +501,11 @@ function jauge(a){
     + '<span class="s">seuil ' + s.toFixed(0) + ' %</span></div></div>';
 }
 
-function afficher(d, nom){
+function afficher(d){
+  const nom = nomCourant;
   const m = d.meta, st = m.statut_global;
+  const corr = m.corrections || [];
+  const fmt = v => v == null ? "vide" : (typeof v === "number" ? nb(v) : String(v));
   const mot = {fiable:"Exploitable", a_verifier:"À vérifier", non_exploitable:"Non exploitable"}[st] || st;
   const glyphe = {fiable:"✓", a_verifier:"!", non_exploitable:"✕"}[st] || "?";
   const echecs = m.controles.filter(c=>c.resultat === "echec").length;
@@ -368,15 +520,18 @@ function afficher(d, nom){
   if (bloquants.length) bouts.push(bloquants.length + " point" + (bloquants.length>1?"s":"") + " bloquant" + (bloquants.length>1?"s":""));
   if (nonLus.length) bouts.push(nonLus.length + " champ" + (nonLus.length>1?"s":"") + " non lu" + (nonLus.length>1?"s":""));
   if (echecs) bouts.push(echecs + " controle" + (echecs>1?"s":"") + " en echec");
-  const sous = bouts.length
-    ? bouts.join(" · ") + (st === "non_exploitable" ? "" : " — le reste est coherent")
-    : "Tous les controles applicables sont coherents.";
+  const sous = (bouts.length
+      ? bouts.join(" · ") + (st === "non_exploitable" ? "" : " — le reste est coherent")
+      : "Tous les controles applicables sont coherents.")
+    + (corr.length ? " " + corr.length + " valeur" + (corr.length>1?"s":"")
+                     + " corrigee" + (corr.length>1?"s":"") + " a la main." : "");
 
   const puces = [];
   bloquants.forEach(a => puces.push('<span class="p-echec">' + esc(a.code.replace(/_/g," ")) + "</span>"));
   nonLus.forEach(c => puces.push('<span class="p-alerte">' + c.replace(/_/g," ").toUpperCase() + " NON LU</span>"));
   if (echecs) puces.push('<span class="p-echec">CONTROLE ' + echecs + "/" + m.controles.length + " EN ECHEC</span>");
   if (!puces.length) puces.push('<span class="p-ok">' + ok + "/" + m.controles.length + " CONTROLES OK</span>");
+  if (corr.length) puces.push('<span class="p-corr">' + corr.length + " CORRIGEE" + (corr.length>1?"S":"") + "</span>");
 
   const chiffrees = d.lignes_produits.filter(l => l.total_ligne != null);
   const somme = chiffrees.length ? chiffrees.reduce((s,l)=>s+l.total_ligne, 0) : null;
@@ -384,21 +539,37 @@ function afficher(d, nom){
                       && chiffrees.length === d.lignes_produits.length
                       && Math.abs(somme - d.total_HT) > 0.011;
 
+  const cls = edition ? " edite" : "";
+  const cellule = (i, col, valeur, droite) =>
+    '<div' + (droite ? ' class="n"' : "") + '><input class="saisie' + (droite ? " n" : "")
+    + '" data-ligne="' + i + '" data-col="' + col + '" value="' + esc(valeur) + '" autocomplete="off"></div>';
+
   const lignes = d.lignes_produits.length ? (
     '<div class="tableau">'
-    + '<div class="tl tete"><div>Designation</div><div class="n">Qte</div><div class="n">PU HT</div><div class="n">Total</div></div>'
-    + d.lignes_produits.map(l =>
-        '<div class="tl corps"><div>' + (l.designation == null ? '<span class="vide">non lu</span>' : esc(l.designation)) + '</div>'
-        + '<div class="n">' + (l.quantite ?? "–") + '</div>'
-        + '<div class="n">' + (l.prix_unitaire == null ? "–" : nb(l.prix_unitaire)) + '</div>'
-        + '<div class="n fort calc">' + (l.total_ligne == null ? "–" : nb(l.total_ligne)) + '</div></div>').join("")
-    + (somme != null
+    + '<div class="tl tete' + cls + '"><div>Designation</div><div class="n">Qte</div><div class="n">PU HT</div><div class="n">Total</div></div>'
+    + d.lignes_produits.map((l, i) => edition
+        ? '<div class="tl corps' + cls + '">'
+          + cellule(i, "designation", l.designation ?? "", false)
+          + cellule(i, "quantite", l.quantite ?? "", true)
+          + cellule(i, "prix_unitaire", l.prix_unitaire == null ? "" : nb(l.prix_unitaire), true)
+          + '<div class="n calc">recalcule</div></div>'
+        : '<div class="tl corps"><div>' + (l.designation == null ? '<span class="vide">non lu</span>' : esc(l.designation)) + '</div>'
+          + '<div class="n">' + (l.quantite ?? "–") + '</div>'
+          + '<div class="n">' + (l.prix_unitaire == null ? "–" : nb(l.prix_unitaire)) + '</div>'
+          + '<div class="n fort calc">' + (l.total_ligne == null ? "–" : nb(l.total_ligne)) + '</div></div>').join("")
+    // La somme affichee pendant l'edition serait celle d'avant correction :
+    // une valeur perimee a cote de champs qu'on est en train de modifier
+    // induirait en erreur, on l'enleve jusqu'a la validation.
+    + (somme != null && !edition
         ? '<div class="somme' + (discordante ? " discordante" : "") + '"><div class="etiq">Somme des lignes'
           + (chiffrees.length < d.lignes_produits.length
              ? " (" + chiffrees.length + "/" + d.lignes_produits.length + " chiffrees)" : "")
           + '</div><div class="valeur">' + eur(somme) + '</div></div>'
         : "")
-    + '</div><p class="note">La colonne Total et la somme sont calculees par le programme, elles ne sont pas lues sur le document.</p>'
+    + '</div><p class="note">' + (edition
+        ? "Les totaux de ligne et la somme seront recalcules par le programme a la validation."
+        : "La colonne Total et la somme sont calculees par le programme, elles ne sont pas lues sur le document.")
+    + '</p>'
   ) : '<p class="vide">Aucune ligne n\'a pu etre extraite.</p>';
 
   res.innerHTML =
@@ -406,8 +577,19 @@ function afficher(d, nom){
   + '<div class="barre"><span class="titre">Controle factures</span>'
   + '<span class="puce-fichier">' + esc(nom) + " · lecture " + pc(m.confiance_ocr_moyenne)
   + " · analysee en " + (m.duree_ms/1000).toFixed(1).replace(".", ",") + ' s</span>'
-  + '<span class="actions"><button class="btn" id="btn-json">Telecharger le JSON</button>'
-  + '<button class="btn plein" id="btn-autre">Analyser une autre facture</button></span></div>'
+  + '<span class="actions">' + (edition
+      ? '<button class="btn" id="btn-annuler">Annuler</button>'
+        + '<button class="btn plein" id="btn-valider">Valider les corrections</button>'
+      : '<button class="btn" id="btn-pdf">Voir le PDF</button>'
+        + '<button class="btn" id="btn-json">Telecharger le JSON</button>'
+        + '<button class="btn plein" id="btn-corriger">Corriger et valider</button>')
+  + '</span></div>'
+
+  + (edition
+      ? '<div class="bandeau-edition">Mode correction. Les valeurs sont modifiables, le document '
+        + 'd\'origine est ouvert a droite pour comparaison. A la validation, les memes controles '
+        + 'arithmetiques sont rejoues sur les valeurs corrigees, et chaque reprise est tracee dans le JSON.</div>'
+      : "")
 
   + '<div class="verdict v-' + st + '"><div class="rond">' + glyphe + '</div>'
   + '<div><div class="mot">' + mot + '</div><div class="sous">' + sous + '</div></div>'
@@ -436,20 +618,39 @@ function afficher(d, nom){
           + '<span class="code">' + esc(a.code) + (a.champ ? " → " + esc(a.champ) : "") + '</span>'
           + esc(a.message) + jauge(a) + '</div>').join("")
       : '<p class="vide">Aucun.</p>')
-  + '</div></div></div>'
+  + '</div>'
+
+  + (corr.length
+      ? '<div class="carte"><div class="legende">Corrections manuelles · ' + corr.length + '</div>'
+        + corr.map(c => '<div class="corr"><b>' + esc(c.champ.replace(/_/g," ")) + '</b><br>'
+            + '<span class="avant' + (c.valeur_lue == null ? " neant" : "") + '">'
+            + esc(fmt(c.valeur_lue)) + '</span> '
+            + '<span class="fleche">-&gt;</span> '
+            + '<span class="apres">' + esc(fmt(c.valeur_retenue)) + '</span></div>').join("")
+        + '<p class="note">Ces valeurs viennent d\'une saisie humaine, pas de la lecture '
+        + 'automatique. Le JSON conserve les deux.</p></div>'
+      : "")
+  + '</div></div>'
 
   + '<details><summary>Donnees completes (JSON)</summary><pre>' + esc(JSON.stringify(d,null,2)) + '</pre></details>'
   + '</div>';
 
-  $("#btn-json").onclick = () => {
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([JSON.stringify(dernier,null,2)], {type:"application/json"}));
-    a.download = nom.replace(/\.pdf$/i,"") + ".json"; a.click(); URL.revokeObjectURL(a.href);
-  };
-  $("#btn-autre").onclick = () => {
-    res.innerHTML = ""; history.replaceState(null,"",location.pathname);
-    depot.scrollIntoView({behavior:"smooth", block:"center"});
-  };
+  if (edition) {
+    $("#btn-annuler").onclick = () => { edition = false; afficher(dernier); };
+    $("#btn-valider").onclick = valider;
+    const premier = res.querySelector(".saisie");
+    if (premier) premier.focus();
+  } else {
+    // Corriger sans le document sous les yeux n'aurait pas de sens : passer en
+    // mode correction ouvre le PDF d'origine dans le meme geste.
+    $("#btn-corriger").onclick = () => { edition = true; afficher(dernier); montrerPdf(true); };
+    $("#btn-pdf").onclick = () => montrerPdf(volet.hidden);
+    $("#btn-json").onclick = () => {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([JSON.stringify(dernier,null,2)], {type:"application/json"}));
+      a.download = nom.replace(/\.pdf$/i,"") + ".json"; a.click(); URL.revokeObjectURL(a.href);
+    };
+  }
 }
 </script></body></html>
 """

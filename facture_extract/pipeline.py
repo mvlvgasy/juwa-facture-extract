@@ -16,6 +16,7 @@ from . import mistral_io
 from .checks import controler, statut_global
 from .schema import (
     Avertissement,
+    Correction,
     EtatChamp,
     Facture,
     FactureLue,
@@ -42,6 +43,14 @@ SEUIL_CONFIANCE_MOT = 0.90
 # lignes, un numero de facture ne se verifie contre rien. Pour ceux-la, la
 # confiance de lecture est la seule protection disponible.
 CHAMPS_SANS_REDONDANCE = ("nom_fournisseur", "date", "numero_facture")
+
+# Avertissements qui decrivent la LECTURE du document et non ses valeurs : une
+# correction humaine ne les invalide pas, ils sont donc reportes tels quels sur
+# le document corrige. Ceux qui viennent des controles arithmetiques, eux, sont
+# entierement recalcules.
+CODES_DE_LECTURE = frozenset({
+    "CHAMP_ILLISIBLE", "REMARQUE_LECTURE", "CONFIANCE_OCR_FAIBLE", "ENCODAGE_SUSPECT",
+})
 
 
 def _confiance_valeur(valeur: str, mots) -> float | None:
@@ -112,6 +121,124 @@ def _etats_champs(lue: FactureLue) -> dict[str, EtatChamp]:
     etats["lignes_produits"] = EtatChamp.LU if lue.lignes_produits else (
         EtatChamp.ILLISIBLE if "lignes_produits" in signales else EtatChamp.ABSENT)
     return etats
+
+
+def _texte(valeur) -> str | None:
+    """Normalise une saisie libre : la chaine vide vaut absence, pas chaine vide."""
+    if valeur is None:
+        return None
+    return str(valeur).strip() or None
+
+
+# Separateurs de milliers et symboles a retirer avant conversion. Les trois
+# espaces autres que l'espace ordinaire (insecable, fine insecable, fine) sont
+# ce que produisent Word, Excel et les claviers francais : invisibles a la
+# relecture, elles feraient echouer float() sans explication comprehensible.
+PARASITES_NUMERIQUES = (" ", "\xa0", "\u202f", "\u2009", "\u20ac", "EUR")
+
+
+def _nombre(valeur) -> float | None:
+    """Lit un montant saisi a la main, en acceptant les usages francais.
+
+    « 1 040,50 », « 1040.5 » et « 1040,50 € » designent le meme montant.
+    Refuser la virgule decimale a un comptable francais serait un defaut
+    d'interface, pas une rigueur.
+    """
+    if valeur is None:
+        return None
+    if isinstance(valeur, (int, float)):
+        return float(valeur)
+    plat = str(valeur).strip()
+    for parasite in PARASITES_NUMERIQUES:
+        plat = plat.replace(parasite, "")
+    plat = plat.replace(",", ".")
+    if not plat:
+        return None
+    try:
+        return float(plat)
+    except ValueError:
+        # Message rendu a l'utilisateur tel quel : il doit nommer la saisie
+        # fautive, pas la representation interne apres nettoyage.
+        raise ValueError(f"« {valeur} » n'est pas un montant lisible.") from None
+
+
+def revalider(facture: Facture, saisies: dict) -> Facture:
+    """Rejoue les controles apres qu'un humain a corrige des valeurs.
+
+    Une correction ne relance ni l'OCR ni le modele : on ne relit pas le
+    document, on remplace une valeur lue par une valeur tranchee sur pieces,
+    puis on repasse **exactement les memes controles deterministes**. Le chemin
+    corrige n'est donc pas moins verifie que le chemin automatique, ce qui
+    evite le travers habituel de ce genre d'ecran, ou la saisie manuelle est
+    reputee juste parce qu'elle vient d'un humain.
+
+    `saisies` porte les champs a plat et, optionnellement, `lignes_produits`
+    sous forme de liste de dictionnaires. Un champ absent de `saisies` n'est
+    pas touche.
+    """
+    corrige = facture.model_copy(deep=True)
+    corrections: list[Correction] = []
+
+    for champ in CHAMPS_SIMPLES:
+        if champ not in saisies:
+            continue
+        avant = getattr(corrige, champ)
+        apres = (_nombre(saisies[champ]) if champ in ("total_HT", "total_TTC")
+                 else _texte(saisies[champ]))
+        if apres == avant:
+            continue
+        setattr(corrige, champ, apres)
+        corrections.append(Correction(champ=champ, valeur_lue=avant, valeur_retenue=apres))
+        # Vider un champ, c'est declarer qu'il n'y a rien a en tirer ; le
+        # renseigner, c'est prendre la responsabilite de la valeur.
+        corrige.meta.etats_champs[champ] = (
+            EtatChamp.CORRIGE if apres is not None else EtatChamp.ABSENT)
+
+    if "lignes_produits" in saisies:
+        anciennes = corrige.lignes_produits
+        nouvelles: list[LigneProduit] = []
+        for i, brute in enumerate(saisies["lignes_produits"] or []):
+            designation = _texte(brute.get("designation"))
+            quantite = _nombre(brute.get("quantite"))
+            prix = _nombre(brute.get("prix_unitaire"))
+            nouvelles.append(LigneProduit(
+                designation=designation, quantite=quantite, prix_unitaire=prix,
+                total_ligne=(round(quantite * prix, 2)
+                             if quantite is not None and prix is not None else None)))
+            ancienne = anciennes[i] if i < len(anciennes) else None
+            for cle in ("designation", "quantite", "prix_unitaire"):
+                avant = getattr(ancienne, cle) if ancienne else None
+                apres = getattr(nouvelles[-1], cle)
+                if apres != avant:
+                    corrections.append(Correction(
+                        champ=f"ligne {i + 1} · {cle}", valeur_lue=avant, valeur_retenue=apres))
+        if nouvelles != anciennes:
+            corrige.lignes_produits = nouvelles
+            corrige.meta.etats_champs["lignes_produits"] = EtatChamp.CORRIGE
+
+    controles, avertissements = controler(
+        lignes=corrige.lignes_produits,
+        total_ht=corrige.total_HT,
+        total_ttc=corrige.total_TTC,
+        date_facture=corrige.date,
+        # Le texte OCR n'est pas conserve entre deux appels : le controle
+        # d'encodage est repris de la lecture d'origine juste apres, plutot que
+        # recalcule a vide, ce qui le ferait passer au vert a tort.
+        textes=[],
+    )
+    origine = {c.nom: c for c in facture.meta.controles}
+    controles = [origine[c.nom] if c.nom == "encodage_texte" and c.nom in origine else c
+                 for c in controles]
+
+    champs_corriges = {c.champ for c in corrections}
+    reportes = [a for a in facture.avertissements
+                if a.code in CODES_DE_LECTURE and a.champ not in champs_corriges]
+
+    corrige.avertissements = reportes + avertissements
+    corrige.meta.controles = controles
+    corrige.meta.statut_global = statut_global(corrige.avertissements, corrige.meta.etats_champs)
+    corrige.meta.corrections = [*facture.meta.corrections, *corrections]
+    return corrige
 
 
 def traiter(pdf: Path, cli: Mistral | None = None) -> Facture:

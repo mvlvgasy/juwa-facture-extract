@@ -34,6 +34,7 @@ class EtatChamp(str, Enum):
     LU = "lu"                # valeur trouvee et jugee fiable
     ILLISIBLE = "illisible"  # le champ existe dans le document mais n'est pas lisible de facon sure
     ABSENT = "absent"        # le champ ne figure pas dans ce document
+    CORRIGE = "corrige"      # valeur saisie par un humain, qui a tranche sur pieces
 
 
 class Gravite(str, Enum):
@@ -128,6 +129,20 @@ class Controle(BaseModel):
     ecart: float | None = None
 
 
+class Correction(BaseModel):
+    """Une valeur tranchee par un humain apres coup.
+
+    Tracee explicitement plutot que d'ecraser la lecture en silence : dans une
+    chaine comptable, savoir qu'un montant vient d'une saisie manuelle et non
+    d'une lecture automatique n'est pas un detail, c'est ce qui permet de
+    remonter a la decision quand le paiement est conteste.
+    """
+
+    champ: str
+    valeur_lue: str | float | None = None
+    valeur_retenue: str | float | None = None
+
+
 class LigneProduit(BaseModel):
     designation: str | None = None
     quantite: float | None = None
@@ -147,6 +162,9 @@ class Meta(BaseModel):
     modele_ocr: str | None = None
     modele_extraction: str | None = None
     duree_ms: int | None = None
+    corrections: list[Correction] = Field(
+        default_factory=list,
+        description="Valeurs reprises a la main apres la lecture automatique, dans l'ordre.")
 
 
 class Facture(BaseModel):

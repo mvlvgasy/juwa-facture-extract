@@ -52,6 +52,22 @@ python -m uvicorn facture_extract.web:app --port 8100
 Puis `http://localhost:8100`. Dépôt par glisser-déposer, et des boutons chargent
 directement les factures du jeu de test.
 
+L'écran met le doute avant les valeurs : verdict en tête, champs non lus signalés
+avec leur raison, contrôles et avertissements épinglés à droite pendant qu'on lit
+les montants. Trois actions ensuite :
+
+- **Voir le PDF** ouvre le document d'origine à côté des valeurs extraites,
+  parce que vérifier une lecture suppose de voir la source.
+- **Corriger et valider** rend les champs modifiables. À la validation, les
+  **mêmes contrôles arithmétiques sont rejoués** sur les valeurs corrigées : une
+  saisie humaine n'est pas réputée juste, elle est vérifiée comme le reste. Chaque
+  reprise est tracée dans le JSON (`meta.corrections`), avec la valeur lue et la
+  valeur retenue, et le champ passe à l'état `corrige`.
+- **Télécharger le JSON** exporte le document final, corrections comprises.
+
+La correction ne rappelle ni l'OCR ni le modèle : elle recalcule. Elle est donc
+instantanée et ne consomme aucun crédit d'API.
+
 ---
 
 ## Ce que fait le programme
@@ -119,6 +135,7 @@ permet pas d'exprimer.
 | `lu` | Valeur trouvée et jugée fiable |
 | `illisible` | Le champ figure sur le document mais n'a pas pu être lu de façon sûre |
 | `absent` | Le champ ne figure pas sur ce document |
+| `corrige` | Valeur saisie par un humain, qui a tranché sur pièces |
 
 ---
 
