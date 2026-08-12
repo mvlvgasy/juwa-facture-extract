@@ -22,6 +22,10 @@ L'installation en mode `-e` fournit une commande `facture-extract` utilisable
 **depuis n'importe quel dossier**. À défaut, `python -m facture_extract` fonctionne
 aussi, mais seulement depuis la racine du projet.
 
+> Windows : le SDK `mistralai` contient des noms de fichiers très longs. Si
+> l'installation échoue avec une erreur de chemin, cloner dans un chemin court
+> (par exemple `C:\dev\`) ou activer la prise en charge des chemins longs.
+
 La clé se récupère sur [console.mistral.ai](https://console.mistral.ai) (le tier
 gratuit suffit pour ce volume). Elle est lue depuis la variable d'environnement
 `MISTRAL_API_KEY`, ou à défaut depuis le fichier `.env`, **qui est gitignoré et
