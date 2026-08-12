@@ -1,2 +1,0 @@
-[console_scripts]
-facture-extract = facture_extract.cli:main
