@@ -73,6 +73,15 @@ def controler(
             nom="somme_lignes_vs_total_ht",
             resultat=ResultatControle.NON_APPLICABLE,
             detail="Lignes chiffrees ou total HT manquants, comparaison impossible."))
+    elif len(calculables) < len(lignes):
+        # Une facture forfaitaire porte des lignes sans prix unitaire. Comparer
+        # une somme partielle au total imprime produirait un ecart qui n'existe
+        # pas : on s'abstient plutot que de crier au loup.
+        ajoute(Controle(
+            nom="somme_lignes_vs_total_ht",
+            resultat=ResultatControle.NON_APPLICABLE,
+            detail=(f"{len(lignes) - len(calculables)} ligne(s) sur {len(lignes)} sans prix unitaire "
+                    f"(forfait ou prix non lu) : la somme serait partielle, la comparaison n'aurait pas de sens.")))
     else:
         somme = _arrondi(sum(l.quantite * l.prix_unitaire for l in calculables))
         ecart = _arrondi(total_ht - somme)

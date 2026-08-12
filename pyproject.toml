@@ -1,0 +1,26 @@
+[project]
+name = "facture-extract"
+version = "0.1.0"
+description = "Extraction structuree de factures fournisseurs via l'API Mistral."
+requires-python = ">=3.11"
+dependencies = [
+    "mistralai>=2.9,<3",
+    "pydantic>=2.7",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+# Uniquement pour regenerer le jeu de test, pas pour l'extraction.
+jeu-de-test = ["pymupdf>=1.24", "pillow>=10.0"]
+
+[project.scripts]
+facture-extract = "facture_extract.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["facture_extract"]

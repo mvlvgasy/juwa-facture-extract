@@ -14,9 +14,13 @@ Traitements IA via l'**API Mistral** uniquement.
 git clone <url-du-repo> && cd juwa-facture-extract
 python -m venv .venv && .venv\Scripts\activate      # Windows
 # python3 -m venv .venv && source .venv/bin/activate  # macOS / Linux
-pip install -r requirements.txt
+pip install -e .
 cp .env.example .env        # puis renseigner MISTRAL_API_KEY
 ```
+
+L'installation en mode `-e` fournit une commande `facture-extract` utilisable
+**depuis n'importe quel dossier**. À défaut, `python -m facture_extract` fonctionne
+aussi, mais seulement depuis la racine du projet.
 
 La clé se récupère sur [console.mistral.ai](https://console.mistral.ai) (le tier
 gratuit suffit pour ce volume). Elle est lue depuis la variable d'environnement
@@ -26,11 +30,11 @@ n'est jamais commité**.
 ### En ligne de commande
 
 ```bash
-python -m facture_extract tests/fixtures/facture_2_studio_botanica.pdf
+facture-extract tests/fixtures/facture_2_studio_botanica.pdf
 ```
 
 ```bash
-python -m facture_extract tests/fixtures/*.pdf --json --out resultats/
+facture-extract tests/fixtures/*.pdf --json --out resultats/
 ```
 
 `--json` imprime le document complet, `--out` écrit un fichier par facture.
@@ -147,14 +151,43 @@ il ne m'appartient pas de les publier.
 | `facture_3_scan_2009_degrade` | Version rasterisée sans couche texte : zéro caractère extractible sans OCR |
 | `facture_4_hydrofluid_encodage` | Anomalie d'encodage du texte source |
 
+Six cas limites supplémentaires, générés par `scripts/make_edge_cases.py`, un
+piège par fichier :
+
+| Fixture | Ce qu'elle éprouve | Résultat |
+|---|---|---|
+| `facture_5_prestation_sans_quantite` | Lignes forfaitaires sans prix unitaire | `fiable`, comparaison des totaux déclarée non applicable au lieu d'un faux écart |
+| `facture_6_tva_incoherente` | Rapport TTC/HT à 13,70 % | `a_verifier`, taux inconnu signalé |
+| `facture_7_numero_absent` | Aucun numéro imprimé | `fiable`, champ `absent`, aucune alerte |
+| `facture_8_numero_illisible` | Numéro noyé sous une bavure d'encre | `a_verifier`, valeur **écartée** et champ `illisible` |
+| `facture_9_devise_dollars` | Facture en dollars, taxe à 8,25 % | `a_verifier`, limite connue rendue visible |
+| `facture_10_bon_de_livraison` | Bon de livraison, donc pas une facture | `non_exploitable` |
+
+**Ce corpus a révélé trois défauts du programme, qui ont été corrigés :** un faux
+écart de totaux sur les factures forfaitaires, un bon de livraison classé
+`fiable` faute de contrôle sur l'absence de total, et surtout le cas ci-dessous.
+
 ---
 
 ## Limites connues
 
 Elles sont annoncées ici plutôt que découvertes en production.
 
+- **L'OCR invente, et les contrôles arithmétiques ne peuvent pas le rattraper.**
+  Sur `facture_8`, dont le numéro était volontairement noyé sous une bavure,
+  l'OCR a produit `FL2026-0001` en devinant les deux derniers caractères. Aucun
+  contrôle de cohérence ne peut détecter ça : **un total se recalcule depuis les
+  lignes, un numéro de facture ne se vérifie contre rien.** Les champs sans
+  redondance interne sont donc structurellement exposés.
+
+  La mitigation retenue exploite le seul signal disponible : la confiance de
+  lecture **au mot**. La valeur inventée sortait à 68 % quand tout le reste du
+  document dépassait 99 %. Les champs sans redondance dont la confiance passe
+  sous 90 % sont désormais écartés et repassés à `null`, avec un avertissement
+  qui indique ce qui avait été lu. C'est une atténuation, pas une garantie : un
+  OCR sûr de lui et faux passerait toujours.
 - **La dégradation du scan n'a pas mis l'OCR en difficulté.** Confiance moyenne
-  de 98,2 % sur la version dégradée contre 98,0 % sur la version propre, tous
+  de 99,0 % sur la version dégradée contre 98,6 % sur la version propre, tous
   les champs retrouvés. Le cas dégradé n'est donc **pas réellement éprouvé** :
   ma dégradation n'était pas assez sévère, et il faudrait de vrais scans anciens
   pour conclure.

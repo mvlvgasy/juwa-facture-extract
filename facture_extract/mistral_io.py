@@ -57,12 +57,20 @@ raturee, tampon illisible, colonne tronquee.
 
 
 @dataclass
+class MotLu:
+    """Un fragment de texte et la confiance que l'OCR lui accorde."""
+    texte: str
+    confiance: float
+
+
+@dataclass
 class ResultatOcr:
     texte: str
     tableaux: list[str]
     confiance_moyenne: float | None
     confiance_minimum: float | None
     modele: str
+    mots: list[MotLu]
 
     @property
     def texte_complet(self) -> str:
@@ -118,10 +126,13 @@ def ocr(pdf: Path, cli: Mistral | None = None) -> ResultatOcr:
         document={"type": "document_url",
                   "document_url": f"data:application/pdf;base64,{donnees}"},
         table_format="markdown",
-        confidence_scores_granularity="page",
+        # Granularite au mot, et non a la page : c'est ce qui permet de reperer
+        # une valeur precise que l'OCR a devinee. Une confiance moyenne de page
+        # reste excellente meme quand un champ isole est invente.
+        confidence_scores_granularity="word",
     )
 
-    textes, tableaux, moyennes, minima = [], [], [], []
+    textes, tableaux, moyennes, minima, mots = [], [], [], [], []
     for page in reponse.pages:
         if page.markdown:
             textes.append(page.markdown)
@@ -135,6 +146,11 @@ def ocr(pdf: Path, cli: Mistral | None = None) -> ResultatOcr:
                 moyennes.append(scores.average_page_confidence_score)
             if getattr(scores, "minimum_page_confidence_score", None) is not None:
                 minima.append(scores.minimum_page_confidence_score)
+            for m in (getattr(scores, "word_confidence_scores", None) or []):
+                texte_mot = getattr(m, "text", None)
+                score = getattr(m, "confidence", None)
+                if texte_mot and score is not None:
+                    mots.append(MotLu(texte=texte_mot.strip(), confiance=float(score)))
 
     return ResultatOcr(
         texte="\n\n".join(textes),
@@ -142,6 +158,7 @@ def ocr(pdf: Path, cli: Mistral | None = None) -> ResultatOcr:
         confiance_moyenne=sum(moyennes) / len(moyennes) if moyennes else None,
         confiance_minimum=min(minima) if minima else None,
         modele=reponse.model or MODELE_OCR,
+        mots=mots,
     )
 
 
