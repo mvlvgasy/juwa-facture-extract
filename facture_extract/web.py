@@ -102,70 +102,72 @@ PAGE = r"""<!doctype html>
 <title>Lecture de facture</title>
 <style>
 /* =====================================================================
-   Design system « suisse » du lab-design : grille internationale, neutre
-   geometrique, rouge signal, zero ornement. Preset genere depuis ses
+   Design system « klein-lin » du lab-design : fond lin chaud, outremer
+   franc, ardoise bleutee, mono pour les montants. Preset genere depuis ses
    tokens et incruste tel quel, pour que la page reste autonome : aucune
    ressource distante, donc aucun risque de rendu degrade en demonstration.
    Les composants ci-dessous ne parlent QU'a la couche haute (les roles),
    jamais a la couche matiere. C'est la regle du systeme, et c'est ce qui
    permet de rethemer sans toucher au balisage.
    ===================================================================== */
-  /* suisse — grille internationale, neutre géométrique, rouge signal, zéro ornement */
-  /* GÉNÉRÉ par tools/build-tokens.mjs depuis design-systems/suisse/tokens.json — ne pas éditer à la main. */
+  /* klein-lin — assurance santé d'équipe B2B — fond lin chaud, outremer franc, ardoise bleutée, Candara + Calibri + mono montants, mode bleu nuit apaisé */
+  /* GÉNÉRÉ par tools/build-tokens.mjs depuis design-systems/klein-lin/tokens.json — ne pas éditer à la main. */
   :root {
-    --bg: #ffffff;
-    --fg: #121212;
-    --accent: #d32011;
-    --muted: #5e5e5e;
-    --line: #121212;
-    --font-display: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-    --font-body: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-    --radius: 0;
-    --border: 1px solid #121212;
-    --shadow: none;
-    --fg-soft: #464646;
-    --fg-faint: #9b9b9b;
-    --fg-inverse: #ffffff;
-    --surface-card: #ffffff;
-    --surface-sunken: #f4f4f4;
-    --line: #121212;
-    --line-strong: #121212;
-    --accent-text: #d32011;
-    --accent-ink: #ffffff;
-    --accent-veil: #fae4e2;
-    --success: #1c7847;
-    --success-veil: #e4efe9;
-    --warning: #7c5f1d;
-    --warning-veil: #efece4;
+    --bg: #f4efe6;
+    --fg: #1a2a3a;
+    --accent: #1a4fc8;
+    --muted: #5c6478;
+    --line: #dbd3c4;
+    --font-display: Candara, Optima, 'Gill Sans MT', 'Gill Sans', system-ui, sans-serif;
+    --font-body: Calibri, Candara, system-ui, sans-serif;
+    --font-mono: ui-monospace, 'Cascadia Mono', Consolas, 'Courier New', monospace;
+    --radius: 10px;
+    --border: 1px solid #dbd3c4;
+    --shadow: 0 4px 18px -4px rgba(26, 79, 200, 0.10);
+    --fg-soft: #4a5560;
+    --fg-faint: #989c9e;
+    --fg-inverse: #f4efe6;
+    --surface-card: #fcfaf8;
+    --surface-sunken: #e9e4dc;
+    --line: #dbd3c4;
+    --line-strong: #c4bfb3;
+    --accent-text: #1a4fc8;
+    --accent-ink: #fdfdfb;
+    --accent-veil: #dadce2;
+    --success: #196b40;
+    --success-veil: #dadfd2;
+    --warning: #74591b;
+    --warning-veil: #e5ddce;
     --error: #7c2a1d;
-    --error-veil: #efe5e4;
-    --focus-ring: #121212;
+    --error-veil: #e6d7ce;
+    --focus-ring: #1a2a3a;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #0d0d0d;
-      --fg: #f2f2f2;
-      --accent: #ff5540;
-      --muted: #9c9c9c;
-      --line: #f2f2f2;
-      --border: 1px solid #f2f2f2;
-      --fg-soft: #c0c0c0;
-      --fg-faint: #6d6d6d;
-      --fg-inverse: #0d0d0d;
-      --surface-card: #1a1a1a;
-      --surface-sunken: #080808;
-      --line: #f2f2f2;
-      --line-strong: #f2f2f2;
-      --accent-text: #ff5540;
-      --accent-ink: #292929;
-      --accent-veil: #2a1613;
+      --bg: #141e2e;
+      --fg: #e8eef8;
+      --accent: #6b90ee;
+      --muted: #8899b4;
+      --line: #263449;
+      --border: 1px solid #263449;
+      --shadow: 0 4px 18px -4px rgba(0, 10, 30, 0.50);
+      --fg-soft: #b9c0cc;
+      --fg-faint: #6d7583;
+      --fg-inverse: #141e2e;
+      --surface-card: #212a39;
+      --surface-sunken: #0c121c;
+      --line: #263449;
+      --line-strong: #3d4a5e;
+      --accent-text: #6b90ee;
+      --accent-ink: #2a2b2d;
+      --accent-veil: #1e2c45;
       --success: #6adc9f;
-      --success-veil: #18261f;
+      --success-veil: #1e353c;
       --warning: #dcba6a;
-      --warning-veil: #262218;
+      --warning-veil: #2c3135;
       --error: #dc796a;
-      --error-veil: #261a18;
-      --focus-ring: #f2f2f2;
+      --error-veil: #2c2935;
+      --focus-ring: #e8eef8;
     }
   }
 /* ---------------------------------------------------------------------
