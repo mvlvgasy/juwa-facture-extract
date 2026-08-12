@@ -122,9 +122,22 @@ test a donc été **reconstruit à partir de ces sorties**, pour pouvoir valider
 pipeline en attendant les originaux.
 
 ```bash
-python scripts/make_test_invoices.py                   # regénère les PDF
+python scripts/make_test_invoices.py                      # regénère les PDF
 python scripts/degrade_scan.py <entrée.pdf> <sortie.pdf>  # fabrique un scan dégradé
 ```
+
+### Vérification par rapport aux sorties attendues
+
+```bash
+python -m facture_extract tests/fixtures/*.pdf --out resultats/
+python tests/comparer_reference.py --ref <dossier des JSON de référence>
+```
+
+Compare champ par champ, lignes comprises, avec une tolérance d'un centime.
+Sur les quatre fichiers de référence fournis avec l'énoncé : **0 écart**.
+
+Les JSON de référence ne sont pas versionnés ici : ils font partie de l'énoncé,
+il ne m'appartient pas de les publier.
 
 | Fixture | Difficulté couverte |
 |---|---|
