@@ -149,8 +149,12 @@ def traiter(pdf: Path, cli: Mistral | None = None) -> Facture:
         else:
             message = (f"Le champ « {champ} » figure sur le document mais n'a pas pu etre lu "
                        f"de facon fiable. Aucune valeur n'a ete supposee.")
+        refus = valeurs_refusees.get(champ)
         avertissements.append(Avertissement(
-            code="CHAMP_ILLISIBLE", champ=champ, gravite=Gravite.ALERTE, message=message))
+            code="CHAMP_ILLISIBLE", champ=champ, gravite=Gravite.ALERTE, message=message,
+            valeur_ecartee=refus[0] if refus else None,
+            confiance=refus[1] if refus else None,
+            seuil=SEUIL_CONFIANCE_MOT if refus else None))
 
     # 7. Remarques de lecture remontees par le modele.
     for remarque in lue.remarques:

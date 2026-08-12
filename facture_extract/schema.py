@@ -109,6 +109,12 @@ class Avertissement(BaseModel):
     champ: str | None = None
     message: str
     gravite: Gravite
+    # Renseignes uniquement quand une valeur a ete lue puis ecartee pour cause
+    # d'incertitude. Exposes en clair plutot que noyes dans le message : une
+    # interface doit pouvoir les afficher sans avoir a analyser une phrase.
+    valeur_ecartee: str | None = None
+    confiance: float | None = None
+    seuil: float | None = None
 
 
 class Controle(BaseModel):

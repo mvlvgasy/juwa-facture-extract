@@ -47,6 +47,8 @@ le lire de facon sure, laisse-le a null ET ajoute son nom dans \
 `champs_illisibles`.
 - Recopie les libelles et les numeros caractere pour caractere, sans corriger \
 l'orthographe, sans developper les abreviations, sans reformuler.
+- `nom_fournisseur` est la raison sociale seule, la premiere ligne de \
+l'en-tete. N'y mets ni l'adresse, ni le code postal, ni le SIRET.
 - Les montants sont des nombres decimaux au point. Convertis « 1 234,56 EUR » \
 en 1234.56.
 - La date va au format AAAA-MM-JJ. Si le document est au format JJ/MM/AAAA, \
