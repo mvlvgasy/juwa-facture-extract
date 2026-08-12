@@ -24,3 +24,6 @@ secrets/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Sorties de traitement
+resultats/

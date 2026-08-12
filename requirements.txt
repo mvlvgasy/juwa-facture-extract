@@ -1,0 +1,9 @@
+mistralai>=2.9,<3
+pydantic>=2.7
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9
+
+# Uniquement pour regenerer le jeu de test (scripts/), pas pour l'extraction :
+pymupdf>=1.24
+pillow>=10.0
