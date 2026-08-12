@@ -27,3 +27,6 @@ desktop.ini
 
 # Sorties de traitement
 resultats/
+
+__pycache__/
+*.py[cod]
