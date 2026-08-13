@@ -70,6 +70,11 @@ class LigneLue(BaseModel):
         description="Quantite. null si la ligne n'en porte pas.")
     prix_unitaire: float | None = Field(
         description="Prix unitaire hors taxes. null si non lisible.")
+    montant_ligne: float | None = Field(
+        description=("Montant total de la ligne TEL QU'IMPRIME sur le document, dans la colonne "
+                     "total ou montant. Ne surtout pas le recalculer a partir de la quantite et "
+                     "du prix unitaire : c'est la valeur imprimee qui est demandee, meme si elle "
+                     "parait fausse. null si la ligne ne porte pas de colonne total."))
 
 
 class FactureLue(BaseModel):
@@ -144,11 +149,27 @@ class Correction(BaseModel):
 
 
 class LigneProduit(BaseModel):
+    """Une ligne du tableau de detail.
+
+    Deux montants distincts et jamais fusionnes, pour la meme raison qui
+    impose de lire le total HT plutot que de le recalculer : si le code
+    substitue silencieusement sa propre valeur a celle du document, une erreur
+    de calcul presente sur la facture devient indetectable par construction.
+
+    - `total_ligne`    : quantite x prix_unitaire, calcule ici.
+    - `total_ligne_lu` : la valeur imprimee dans la colonne total, lue telle quelle.
+
+    Quand les deux existent et different, c'est le fournisseur qui s'est trompe,
+    et c'est precisement ce qu'on veut signaler.
+    """
+
     designation: str | None = None
     quantite: float | None = None
     prix_unitaire: float | None = None
     total_ligne: float | None = Field(
         default=None, description="quantite x prix_unitaire, calcule par le code, jamais lu.")
+    total_ligne_lu: float | None = Field(
+        default=None, description="Montant de la ligne tel qu'imprime sur le document, jamais calcule.")
 
 
 class Meta(BaseModel):

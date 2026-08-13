@@ -96,6 +96,7 @@ tout ce qui relève de notre analyse est isolé dans `meta`.
 | Contrôle | Ce qu'il vérifie |
 |---|---|
 | `somme_lignes_vs_total_ht` | La somme des lignes correspond-elle au total HT imprimé. En cas d'écart, **aucune des deux valeurs n'est corrigée**, les deux restent visibles |
+| `coherence_lignes` | Pour chaque ligne, le montant **imprimé** correspond-il au produit quantité × prix unitaire. Détecte une erreur de calcul commise par le fournisseur sur son propre document, que le contrôle de la somme ne voit pas quand le total HT est juste par ailleurs |
 | `taux_tva` | Le taux est **déduit** du rapport TTC/HT, jamais supposé, puis confronté aux taux français connus, historiques compris |
 | `ttc_superieur_ht` | Cohérence élémentaire des deux totaux |
 | `date_plausible` | Format, date non future, année vraisemblable |
@@ -184,10 +185,21 @@ piège par fichier :
 | `facture_8_numero_illisible` | Numéro noyé sous une bavure d'encre | `a_verifier`, valeur **écartée** et champ `illisible` |
 | `facture_9_devise_dollars` | Facture en dollars, taxe à 8,25 % | `a_verifier`, limite connue rendue visible |
 | `facture_10_bon_de_livraison` | Bon de livraison, donc pas une facture | `non_exploitable` |
+| `facture_11_ligne_mal_calculee` | Ligne affichée à 380,00 alors que 5 × 57,00 = 285,00, **total HT juste par ailleurs** | `a_verifier`, `coherence_lignes` en échec |
 
 **Ce corpus a révélé trois défauts du programme, qui ont été corrigés :** un faux
 écart de totaux sur les factures forfaitaires, un bon de livraison classé
 `fiable` faute de contrôle sur l'absence de total, et surtout le cas ci-dessous.
+
+**Un quatrième défaut a été relevé par JUWA lors du débrief du 13/08/2026**, sur
+une facture piégée fournie en séance. Le programme ne lisait pas le montant
+imprimé de chaque ligne : il affichait systématiquement son propre produit
+quantité × prix unitaire. Une erreur de calcul commise par le fournisseur sur sa
+propre facture était donc **corrigée en silence**, ce qui contredisait le principe
+appliqué par ailleurs au total HT. Corrigé par l'ajout du champ lu
+`total_ligne_lu`, du contrôle `coherence_lignes` et de l'affichage des deux
+montants côte à côte dès qu'ils divergent. `facture_11` est le cas de non-régression :
+le contrôle global y passe au vert, seul le contrôle ligne à ligne détecte l'anomalie.
 
 ---
 

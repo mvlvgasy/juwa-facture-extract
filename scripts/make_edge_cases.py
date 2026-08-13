@@ -49,11 +49,21 @@ def document(*, fournisseur: str, numero: str, date: str, lignes: list[dict],
              titre: str = "FACTURE", entete_detail: str = "DETAIL DES PRESTATIONS",
              mention_tva: str | None = None, numero_html: str | None = None,
              pied: str = "Reglement par virement sous 30 jours.") -> str:
+    def total_imprime(l: dict) -> str:
+        # `total_imprime` permet de forcer un montant de ligne different du
+        # produit quantite x prix unitaire, pour reproduire une erreur de calcul
+        # commise par le fournisseur sur son propre document.
+        if l.get("total_imprime") is not None:
+            return montant(l["total_imprime"], devise)
+        if l.get("quantite") is None or l.get("prix_unitaire") is None:
+            return ""
+        return montant(l["quantite"] * l["prix_unitaire"], devise)
+
     rows = "".join(
         f"<tr><td>{l['designation']}</td>"
         f"<td class='n'>{'' if l.get('quantite') is None else l['quantite']}</td>"
         f"<td class='n'>{'' if l.get('prix_unitaire') is None else montant(l['prix_unitaire'], devise)}</td>"
-        f"<td class='n'>{'' if l.get('quantite') is None or l.get('prix_unitaire') is None else montant(l['quantite'] * l['prix_unitaire'], devise)}</td></tr>"
+        f"<td class='n'>{total_imprime(l)}</td></tr>"
         for l in lignes)
 
     bloc_totaux = ""
@@ -78,6 +88,21 @@ def document(*, fournisseur: str, numero: str, date: str, lignes: list[dict],
 
 # Chaque entree : (nom de fichier, ce que le cas teste, html)
 CAS: list[tuple[str, str, str]] = [
+    ("facture_11_ligne_mal_calculee",
+     "Erreur de calcul commise par le fournisseur SUR SON PROPRE DOCUMENT : la ligne "
+     "d'evacuation affiche 380,00 alors que 5 x 57,00 fait 285,00. Le total HT imprime, "
+     "lui, est juste (1 119,20 = somme des produits reels), donc le controle global "
+     "somme_lignes_vs_total_ht passe au VERT et ne voit rien. Seul le controle ligne a "
+     "ligne detecte l'anomalie. C'est exactement le defaut releve par JUWA au debrief "
+     "du 13/08/2026 : sans lui, le programme affichait sa propre valeur recalculee et "
+     "corrigeait l'erreur du fournisseur en silence.",
+     document(fournisseur="ATELIERS DELMAS", numero="FA-2026-0779", date="2026-06-04",
+              lignes=[{"designation": "Electrovanne 4/3 centre ferme", "quantite": 3, "prix_unitaire": 187.4},
+                      {"designation": "Kit evacuation renforce", "quantite": 5, "prix_unitaire": 57.0,
+                       "total_imprime": 380.0},
+                      {"designation": "Main d'oeuvre pose", "quantite": 4, "prix_unitaire": 68.0}],
+              total_ht=1119.2, total_ttc=1343.04)),
+
     ("facture_5_prestation_sans_quantite",
      "Lignes forfaitaires sans quantite imprimee : les quantites doivent ressortir "
      "en `absent`, pas en `illisible`, et surtout pas en 1 invente.",

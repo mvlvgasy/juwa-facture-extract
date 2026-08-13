@@ -301,6 +301,8 @@ body.avec-pdf .grille{grid-template-columns:1fr 300px;gap:16px;padding:20px}
 .somme .etiq{color:var(--mut);font-weight:500}
 .somme.discordante{background:var(--rouge-voile)}
 .somme.discordante .valeur{color:var(--rouge)}
+.tl .n.discordante{color:var(--rouge)}
+.tl .ecart-ligne{display:block;font-size:.78em;font-weight:400;color:var(--mut);white-space:nowrap}
 .note{margin-top:10px;font-size:12px;color:var(--mut);font-style:italic}
 .vide{font-size:13px;color:var(--mut);font-style:italic}
 
@@ -547,7 +549,19 @@ function afficher(d){
   const lignes = d.lignes_produits.length ? (
     '<div class="tableau">'
     + '<div class="tl tete' + cls + '"><div>Designation</div><div class="n">Qte</div><div class="n">PU HT</div><div class="n">Total</div></div>'
-    + d.lignes_produits.map((l, i) => edition
+    + d.lignes_produits.map((l, i) => {
+        // Une ligne dont le montant imprime differe du produit qte x PU est une
+        // erreur du fournisseur. On affiche les deux plutot que de substituer la
+        // notre : corriger en silence rendrait l'erreur indetectable.
+        const ecartLigne = (l.total_ligne != null && l.total_ligne_lu != null
+                            && Math.abs(l.total_ligne - l.total_ligne_lu) > 0.011);
+        const totalCell = ecartLigne
+          ? '<div class="n fort discordante" title="Montant imprime sur la facture : '
+            + nb(l.total_ligne_lu) + '. Calcul quantite x prix unitaire : ' + nb(l.total_ligne) + '.">'
+            + nb(l.total_ligne_lu) + ' <span class="calc">imprime</span>'
+            + '<br><span class="ecart-ligne">calcul : ' + nb(l.total_ligne) + '</span></div>'
+          : '<div class="n fort calc">' + (l.total_ligne == null ? "–" : nb(l.total_ligne)) + '</div>';
+        return edition
         ? '<div class="tl corps' + cls + '">'
           + cellule(i, "designation", l.designation ?? "", false)
           + cellule(i, "quantite", l.quantite ?? "", true)
@@ -556,7 +570,8 @@ function afficher(d){
         : '<div class="tl corps"><div>' + (l.designation == null ? '<span class="vide">non lu</span>' : esc(l.designation)) + '</div>'
           + '<div class="n">' + (l.quantite ?? "–") + '</div>'
           + '<div class="n">' + (l.prix_unitaire == null ? "–" : nb(l.prix_unitaire)) + '</div>'
-          + '<div class="n fort calc">' + (l.total_ligne == null ? "–" : nb(l.total_ligne)) + '</div></div>').join("")
+          + totalCell + '</div>';
+      }).join("")
     // La somme affichee pendant l'edition serait celle d'avant correction :
     // une valeur perimee a cote de champs qu'on est en train de modifier
     // induirait en erreur, on l'enleve jusqu'a la validation.

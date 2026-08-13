@@ -102,6 +102,58 @@ def controler(
                     message=(f"Ecart de {abs(ecart):.2f} entre la somme des lignes ({somme:.2f}) "
                              f"et le total HT imprime ({total_ht:.2f}). A verifier avant paiement.")))
 
+    # --- 1 bis. Coherence de chaque ligne : calcul contre montant imprime ---
+    # Le controle precedent compare la SOMME des lignes au total HT. Il ne voit
+    # donc pas une erreur interne a une ligne : si le fournisseur imprime 380
+    # sur une ligne a 285 (57 x 5), et que le total HT imprime vaut lui aussi
+    # 380 de plus, les deux erreurs se compensent et la somme tombe juste.
+    # Sans ce controle, le programme affiche sa propre valeur recalculee et
+    # corrige donc l'erreur du fournisseur en silence, ce qui est exactement le
+    # comportement qu'on refuse ailleurs sur le total HT.
+    comparables = [
+        l for l in lignes
+        if l.quantite is not None and l.prix_unitaire is not None and l.total_ligne_lu is not None
+    ]
+    if not comparables:
+        ajoute(Controle(
+            nom="coherence_lignes",
+            resultat=ResultatControle.NON_APPLICABLE,
+            detail=("Aucune ligne ne porte a la fois une quantite, un prix unitaire et un montant "
+                    "imprime : la coherence ligne a ligne n'est pas verifiable.")))
+    else:
+        incoherentes: list[tuple[int, float, float, float]] = []
+        for i, l in enumerate(lignes, start=1):
+            if l.quantite is None or l.prix_unitaire is None or l.total_ligne_lu is None:
+                continue
+            calcule = _arrondi(l.quantite * l.prix_unitaire)
+            ecart_ligne = _arrondi(l.total_ligne_lu - calcule)
+            if abs(ecart_ligne) > CENTIME:
+                incoherentes.append((i, calcule, l.total_ligne_lu, ecart_ligne))
+
+        if not incoherentes:
+            ajoute(Controle(
+                nom="coherence_lignes", resultat=ResultatControle.OK,
+                detail=(f"Sur {len(comparables)} ligne(s) verifiable(s), le montant imprime "
+                        f"correspond a quantite x prix unitaire.")))
+        else:
+            details = " ; ".join(
+                f"ligne {i} : {q_pu:.2f} calcule contre {imprime:.2f} imprime (ecart {e:+.2f})"
+                for i, q_pu, imprime, e in incoherentes)
+            ajoute(
+                Controle(
+                    nom="coherence_lignes", resultat=ResultatControle.ECHEC,
+                    detail=(f"{len(incoherentes)} ligne(s) dont le montant imprime ne correspond pas "
+                            f"au produit quantite x prix unitaire. {details}. "
+                            f"Aucune des deux valeurs n'est corrigee."),
+                    ecart=max(abs(e) for *_, e in incoherentes)),
+                Avertissement(
+                    code="LIGNE_INCOHERENTE",
+                    champ="lignes_produits",
+                    gravite=Gravite.ALERTE,
+                    message=(f"{len(incoherentes)} ligne(s) presentent une erreur de calcul sur le "
+                             f"document lui-meme : {details}. Le montant imprime fait foi vis-a-vis "
+                             f"du fournisseur, a arbitrer avant paiement.")))
+
     # --- 2. Taux de TVA deduit, jamais suppose -----------------------------
     # La comparaison se fait en MONTANT, pas en taux : sur une petite facture,
     # la TVA legalement arrondie au centime deforme le taux apparent (HT 1,13,

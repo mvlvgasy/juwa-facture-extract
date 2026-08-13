@@ -201,11 +201,20 @@ def revalider(facture: Facture, saisies: dict) -> Facture:
             designation = _texte(brute.get("designation"))
             quantite = _nombre(brute.get("quantite"))
             prix = _nombre(brute.get("prix_unitaire"))
+            ancienne_ligne = anciennes[i] if i < len(anciennes) else None
+            # Le montant imprime n'est pas saisissable : il constate ce que porte
+            # le document. Corriger une quantite ou un prix ne change pas ce qui
+            # est ecrit sur la facture, donc la valeur lue est conservee telle
+            # quelle et le controle de coherence se rejoue contre elle.
+            montant_imprime = brute.get("total_ligne_lu")
+            montant_imprime = (_nombre(montant_imprime) if montant_imprime is not None
+                               else (ancienne_ligne.total_ligne_lu if ancienne_ligne else None))
             nouvelles.append(LigneProduit(
                 designation=designation, quantite=quantite, prix_unitaire=prix,
                 total_ligne=(round(quantite * prix, 2)
-                             if quantite is not None and prix is not None else None)))
-            ancienne = anciennes[i] if i < len(anciennes) else None
+                             if quantite is not None and prix is not None else None),
+                total_ligne_lu=montant_imprime))
+            ancienne = ancienne_ligne
             for cle in ("designation", "quantite", "prix_unitaire"):
                 avant = getattr(ancienne, cle) if ancienne else None
                 apres = getattr(nouvelles[-1], cle)
@@ -252,8 +261,9 @@ def traiter(pdf: Path, cli: Mistral | None = None) -> Facture:
     # 2. Structuration : le texte devient une structure typee.
     lue = mistral_io.extraire(resultat_ocr.texte_complet, cli)
 
-    # 3. Le total de chaque ligne est calcule ici, jamais lu. Une valeur lue et
-    #    une valeur calculee ne se melangent pas.
+    # 3. Deux montants par ligne, tenus separes : celui qu'on calcule et celui
+    #    qui est imprime. Les fusionner reviendrait a corriger en silence une
+    #    erreur du fournisseur, ce qu'on refuse deja au niveau du total HT.
     lignes = [
         LigneProduit(
             designation=l.designation,
@@ -261,6 +271,7 @@ def traiter(pdf: Path, cli: Mistral | None = None) -> Facture:
             prix_unitaire=l.prix_unitaire,
             total_ligne=(round(l.quantite * l.prix_unitaire, 2)
                          if l.quantite is not None and l.prix_unitaire is not None else None),
+            total_ligne_lu=l.montant_ligne,
         )
         for l in lue.lignes_produits
     ]
